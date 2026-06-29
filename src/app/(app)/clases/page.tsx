@@ -24,7 +24,7 @@ export default function ClasesPage() {
     setRol(usuario?.rol ?? "ALUMNO");
 
     if (usuario?.rol === "ADMIN") {
-      const [resM, resP, resA] = await Promise.all([fetch("/api/materias"), fetch("/api/profesores"), fetch("/api/alumnos")]);
+      const [resM, resP, resA] = await Promise.all([fetch("/api/materias"), fetch("/api/profesores"), fetch("/api/alumnos?all=true")]);
       setMateriasAll(await resM.json());
       setProfesores(await resP.json());
       setAlumnosAll(await resA.json());
@@ -137,14 +137,14 @@ export default function ClasesPage() {
             </div>
 
             {materiaSel && (
-              <div className="form-group"><label>{materiaSel.grado.nivel.tipo === "SUPERIOR" ? "Periodo de ingreso" : "Sección"}</label>
+              <div className="form-group"><label>Sección</label>
                 <select value={form.seccionId || ""} onChange={(e) => setForm({ ...form, seccionId: e.target.value })}>
                   <option value="">Seleccionar…</option>
                   {materiaSel.grado.secciones?.map((s: any) => <option key={s.id} value={s.id}>{s.nombre}</option>) ?? null}
                 </select>
                 {(!materiaSel.grado.secciones || materiaSel.grado.secciones.length === 0) && (
                   <div className="form-hint">
-                    Este {materiaSel.grado.nivel.tipo === "SUPERIOR" ? "ciclo no tiene periodos" : "grado no tiene secciones"} — créalos en "Estructura Académica"
+                    Este grado no tiene secciones — créalas en "Estructura Académica"
                   </div>
                 )}
               </div>

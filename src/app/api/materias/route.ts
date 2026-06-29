@@ -7,12 +7,22 @@ export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
+  // Las secciones que se muestran para crear/editar clases son siempre las del
+  // año lectivo activo, para no mezclar secciones de años distintos al matricular clases.
+  const anoActivo = await prisma.anoLectivo.findFirst({ where: { activo: true }, select: { id: true } });
+
   const materias = await prisma.materia.findMany({
     orderBy: { nombre: "asc" },
-    include: {
-      grado: { include: { nivel: true, carrera: true, secciones: { orderBy: { nombre: "asc" } } } },
-      profesores: { include: { profesor: { include: { usuario: true } } } },
-      clases: true,
+    select: {
+      id: true, nombre: true, gradoId: true,
+      grado: {
+        select: {
+          nombre: true, nivel: true,
+          secciones: { where: anoActivo ? { anoLectivoId: anoActivo.id } : undefined, select: { id: true, nombre: true } },
+        },
+      },
+      profesores: { select: { profesor: { select: { id: true, usuario: { select: { nombre: true } } } } } },
+      clases: { select: { id: true } },
     },
   });
   return NextResponse.json(materias);
@@ -37,7 +47,7 @@ export async function POST(req: Request) {
         profesores: { create: (profesorIds ?? []).map((pid: string) => ({ profesorId: pid })) },
       },
       include: {
-        grado: { include: { nivel: true, carrera: true } },
+        grado: { include: { nivel: true } },
         profesores: { include: { profesor: { include: { usuario: true } } } },
       },
     });
@@ -65,7 +75,7 @@ export async function PUT(req: Request) {
         profesores: { create: (profesorIds ?? []).map((pid: string) => ({ profesorId: pid })) },
       },
       include: {
-        grado: { include: { nivel: true, carrera: true } },
+        grado: { include: { nivel: true } },
         profesores: { include: { profesor: { include: { usuario: true } } } },
       },
     });

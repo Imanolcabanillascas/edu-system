@@ -19,7 +19,7 @@ interface AlumnoRow {
   usuario: { id: string; nombre: string; email: string };
   matricula: { estado: string } | null;
   clases: any[];
-  seccion: { id: string; nombre: string; gradoId: string; grado: { nombre: string; nivel: any; carrera: any } } | null;
+  seccion: { id: string; nombre: string; gradoId: string; grado: { nombre: string; nivel: any } } | null;
 }
 
 export default function AlumnosPage() {
@@ -35,7 +35,6 @@ export default function AlumnosPage() {
   const [modal, setModal] = useState<null | "new" | AlumnoRow>(null);
   const [form, setForm] = useState<any>({});
   const [nivelSel, setNivelSel] = useState("");
-  const [carreraSel, setCarreraSel] = useState("");
   const [gradoSel, setGradoSel] = useState("");
   const [cambiarPassword, setCambiarPassword] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -69,7 +68,7 @@ export default function AlumnosPage() {
 
   const cambiarPagina = (p: number) => { if (p >= 1 && p <= totalPages) loadAlumnos(p); };
 
-  const resetCascada = () => { setNivelSel(""); setCarreraSel(""); setGradoSel(""); };
+  const resetCascada = () => { setNivelSel(""); setGradoSel(""); };
 
   const openNew = () => {
     setForm({ nombre: "", email: "", dni: "", seccionId: "", fechaNac: "", anoIngreso: ANO_ACTUAL, tutorDni: "", tutorNombre: "", tutorTelefono: "", password: "" });
@@ -86,7 +85,6 @@ export default function AlumnosPage() {
     });
     if (a.seccion) {
       setNivelSel(a.seccion.grado.nivel.tipo);
-      setCarreraSel(a.seccion.grado.carrera?.id ?? "");
       setGradoSel(a.seccion.gradoId ?? "");
     } else {
       resetCascada();
@@ -96,12 +94,8 @@ export default function AlumnosPage() {
   };
   const close = () => setModal(null);
 
-  const esSuperior = nivelSel === "SUPERIOR";
   const nivelObj = niveles.find((n: any) => n.tipo === nivelSel);
-  const carrerasDisponibles = nivelObj?.carreras ?? [];
-  const gradosDisponibles = nivelObj
-    ? nivelObj.grados.filter((g: any) => (esSuperior ? g.carreraId === carreraSel : !g.carreraId))
-    : [];
+  const gradosDisponibles = nivelObj?.grados ?? [];
   const gradoObj = gradosDisponibles.find((g: any) => g.id === gradoSel);
   // Las secciones que llegan en `niveles` ya están filtradas al año lectivo activo
   // (lo hace /api/niveles por defecto), así que aquí solo tomamos las del grado elegido.
@@ -267,35 +261,24 @@ export default function AlumnosPage() {
             </div>
             <div className="form-row">
               <div className="form-group"><label>Nivel</label>
-                <select value={nivelSel} onChange={(e) => { setNivelSel(e.target.value); setCarreraSel(""); setGradoSel(""); setForm({ ...form, seccionId: "" }); }}>
+                <select value={nivelSel} onChange={(e) => { setNivelSel(e.target.value); setGradoSel(""); setForm({ ...form, seccionId: "" }); }}>
                   <option value="">Seleccionar…</option>
                   {niveles.map((n: any) => <option key={n.id} value={n.tipo}>{NIVEL_LABEL[n.tipo]}</option>)}
                 </select></div>
-              {esSuperior && (
-                <div className="form-group"><label>Carrera</label>
-                  <select value={carreraSel} onChange={(e) => { setCarreraSel(e.target.value); setGradoSel(""); setForm({ ...form, seccionId: "" }); }}>
-                    <option value="">Seleccionar…</option>
-                    {carrerasDisponibles.map((c: any) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                  </select></div>
-              )}
-            </div>
-            <div className="form-row">
-              <div className="form-group"><label>{esSuperior ? "Ciclo" : "Grado"}</label>
-                <select value={gradoSel} disabled={!nivelSel || (esSuperior && !carreraSel)} onChange={(e) => { setGradoSel(e.target.value); setForm({ ...form, seccionId: "" }); }}>
+              <div className="form-group"><label>Grado</label>
+                <select value={gradoSel} disabled={!nivelSel} onChange={(e) => { setGradoSel(e.target.value); setForm({ ...form, seccionId: "" }); }}>
                   <option value="">Seleccionar…</option>
                   {gradosDisponibles.map((g: any) => <option key={g.id} value={g.id}>{g.nombre}</option>)}
                 </select></div>
-              <div className="form-group"><label>{esSuperior ? "Periodo de ingreso" : "Sección"}</label>
-                <select value={form.seccionId || ""} disabled={!gradoSel} onChange={(e) => setForm({ ...form, seccionId: e.target.value })}>
-                  <option value="">Seleccionar…</option>
-                  {seccionesDisponibles.map((s: any) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-                </select></div>
             </div>
+            <div className="form-group"><label>Sección</label>
+              <select value={form.seccionId || ""} disabled={!gradoSel} onChange={(e) => setForm({ ...form, seccionId: e.target.value })}>
+                <option value="">Seleccionar…</option>
+                {seccionesDisponibles.map((s: any) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+              </select></div>
             {gradoSel && seccionesDisponibles.length === 0 && (
               <div className="form-hint" style={{ marginBottom: 14 }}>
-                {esSuperior
-                  ? 'No hay periodos creados para el año lectivo activo en este ciclo. Créalo en "Estructura Académica".'
-                  : 'Este grado no tiene secciones todavía en el año lectivo activo. Créalas en "Estructura Académica".'}
+                Este grado no tiene secciones todavía en el año lectivo activo. Créalas en "Estructura Académica".
               </div>
             )}
 

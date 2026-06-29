@@ -3,17 +3,16 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-const NIVELES_BASE: { tipo: "PRIMARIA" | "SECUNDARIA" | "SUPERIOR"; nombre: string }[] = [
+const NIVELES_BASE: { tipo: "PRIMARIA" | "SECUNDARIA"; nombre: string }[] = [
   { tipo: "PRIMARIA", nombre: "Primaria" },
   { tipo: "SECUNDARIA", nombre: "Secundaria" },
-  { tipo: "SUPERIOR", nombre: "Superior" },
 ];
 
-// Los 3 niveles son fijos en el sistema (no se crean ni eliminan); se siembran
+// Los 2 niveles son fijos en el sistema (no se crean ni eliminan); se siembran
 // automáticamente la primera vez. El nombre visible sí es editable por el admin.
 async function asegurarNiveles() {
   const existentes = await prisma.nivel.count();
-  if (existentes === 3) return;
+  if (existentes === 2) return;
   for (const n of NIVELES_BASE) {
     await prisma.nivel.upsert({ where: { tipo: n.tipo }, update: {}, create: n });
   }
@@ -37,7 +36,6 @@ export async function GET(req: Request) {
   const niveles = await prisma.nivel.findMany({
     orderBy: { createdAt: "asc" },
     include: {
-      carreras: { orderBy: { createdAt: "asc" } },
       grados: {
         orderBy: [{ ordenSecuencia: "asc" }, { createdAt: "asc" }],
         include: {
@@ -46,7 +44,6 @@ export async function GET(req: Request) {
             orderBy: { createdAt: "asc" },
             include: { anoLectivo: true },
           },
-          carrera: true,
           gradoSiguiente: { select: { id: true, nombre: true } },
         },
       },

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { asegurarGradosBase } from "@/lib/seed-grados";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -21,10 +22,17 @@ export async function POST(req: Request) {
   if (!anio) return NextResponse.json({ error: "Indica el año" }, { status: 400 });
 
   try {
+    // Si este año se marca activo, los demás dejan de estarlo (solo un año activo a la vez)
     const ano = await prisma.$transaction(async (tx) => {
       if (activo) await tx.anoLectivo.updateMany({ where: { activo: true }, data: { activo: false } });
       return tx.anoLectivo.create({ data: { anio: Number(anio), activo: !!activo } });
     });
+
+    // Catálogo fijo de grados (1ro-6to Primaria, 1ro-5to Secundaria): se crea
+    // una sola vez, la primera vez que se da de alta un año lectivo. Si ya
+    // existe (de un año anterior), esta llamada no hace nada.
+    await asegurarGradosBase();
+
     return NextResponse.json(ano, { status: 201 });
   } catch (e: any) {
     if (e.code === "P2002") return NextResponse.json({ error: "Ese año lectivo ya existe" }, { status: 409 });

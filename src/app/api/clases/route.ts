@@ -3,12 +3,19 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-const include = {
-  materia: { include: { grado: { include: { nivel: true, carrera: true } } } },
-  seccion: { include: { grado: { include: { nivel: true, carrera: true } } } },
-  profesor: { include: { usuario: true } },
-  alumnos: { include: { alumno: { include: { usuario: true } } } },
-} as const;
+// select explícito: solo los campos que la UI realmente usa, para reducir
+// el tamaño de la respuesta y el trabajo de la base de datos.
+const claseSelect = {
+  id: true,
+  materiaId: true,
+  seccionId: true,
+  horario: true,
+  salon: true,
+  materia: { select: { nombre: true, grado: { select: { secciones: { select: { id: true, nombre: true } } } } } },
+  seccion: { select: { nombre: true, grado: { select: { nombre: true } } } },
+  profesor: { select: { id: true, usuario: { select: { nombre: true } } } },
+  alumnos: { select: { alumno: { select: { id: true, usuario: { select: { nombre: true } } } } } },
+};
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -16,19 +23,19 @@ export async function GET() {
 
   const usuario = await prisma.usuario.findUnique({
     where: { id: (session.user as any).id },
-    include: { profesor: true, alumno: true },
+    select: { rol: true, profesor: { select: { id: true } }, alumno: { select: { id: true } } },
   });
   if (!usuario) return NextResponse.json([]);
 
   let clases;
   if (usuario.rol === "ADMIN") {
-    clases = await prisma.clase.findMany({ include, orderBy: { createdAt: "desc" } });
+    clases = await prisma.clase.findMany({ select: claseSelect, orderBy: { createdAt: "desc" } });
   } else if (usuario.rol === "PROFESOR" && usuario.profesor) {
-    clases = await prisma.clase.findMany({ where: { profesorId: usuario.profesor.id }, include });
+    clases = await prisma.clase.findMany({ where: { profesorId: usuario.profesor.id }, select: claseSelect });
   } else if (usuario.rol === "ALUMNO" && usuario.alumno) {
     clases = await prisma.clase.findMany({
       where: { alumnos: { some: { alumnoId: usuario.alumno.id } } },
-      include,
+      select: claseSelect,
     });
   } else {
     clases = [];
@@ -54,7 +61,7 @@ export async function POST(req: Request) {
         materiaId, seccionId, profesorId, horario, salon,
         alumnos: { create: (alumnoIds ?? []).map((aid: string) => ({ alumnoId: aid })) },
       },
-      include,
+      select: claseSelect,
     });
     return NextResponse.json(clase, { status: 201 });
   } catch (e: any) {
@@ -79,7 +86,7 @@ export async function PUT(req: Request) {
         materiaId, seccionId, profesorId, horario, salon,
         alumnos: { create: (alumnoIds ?? []).map((aid: string) => ({ alumnoId: aid })) },
       },
-      include,
+      select: claseSelect,
     });
     return NextResponse.json(clase);
   } catch (e: any) {

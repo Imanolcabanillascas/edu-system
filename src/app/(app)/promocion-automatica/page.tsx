@@ -137,7 +137,6 @@ export default function PromocionAutomaticaPage() {
                 <div key={seccion.seccionId} style={{ marginBottom: 28 }}>
                   <h3 className="section-title">
                     {seccion.grado.nombre} "{seccion.seccionNombre}" — {NIVEL_LABEL[seccion.grado.nivel.tipo]}
-                    {seccion.grado.carrera ? ` (${seccion.grado.carrera.nombre})` : ""}
                     {seccion.esUltimoGrado && <span className="badge" style={{ background: "var(--accent2)22", color: "var(--accent2)", marginLeft: 10 }}>Último grado — egresan</span>}
                     {!seccion.esUltimoGrado && !seccion.grado.gradoSiguiente && (
                       <span className="badge" style={{ background: "var(--danger)22", color: "var(--danger)", marginLeft: 10 }}>Sin grado siguiente configurado</span>

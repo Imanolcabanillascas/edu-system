@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   const grados = await prisma.grado.findMany({
     orderBy: [{ ordenSecuencia: "asc" }, { createdAt: "asc" }],
     include: {
-      nivel: true, carrera: true,
+      nivel: true,
       gradoSiguiente: { select: { id: true, nombre: true, nivel: { select: { tipo: true } } } },
       secciones: {
         where: anoLectivoId ? { anoLectivoId } : undefined,
@@ -31,19 +31,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
   }
 
-  const { nombre, nivelId, carreraId, ordenSecuencia } = await req.json();
+  const { nombre, nivelId, ordenSecuencia } = await req.json();
   if (!nombre?.trim() || !nivelId) {
     return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
   }
 
   try {
     const grado = await prisma.grado.create({
-      data: { nombre: nombre.trim(), nivelId, carreraId: carreraId || null, ordenSecuencia: Number(ordenSecuencia) || 0 },
-      include: { nivel: true, carrera: true, secciones: true },
+      data: { nombre: nombre.trim(), nivelId, ordenSecuencia: Number(ordenSecuencia) || 0 },
+      include: { nivel: true, secciones: true },
     });
     return NextResponse.json(grado, { status: 201 });
   } catch (e: any) {
-    if (e.code === "P2002") return NextResponse.json({ error: "Ya existe un grado con ese nombre en ese nivel/carrera" }, { status: 409 });
+    if (e.code === "P2002") return NextResponse.json({ error: "Ya existe un grado con ese nombre en ese nivel" }, { status: 409 });
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
@@ -63,11 +63,11 @@ export async function PUT(req: Request) {
         ...(ordenSecuencia !== undefined ? { ordenSecuencia: Number(ordenSecuencia) } : {}),
         ...(gradoSiguienteId !== undefined ? { gradoSiguienteId: gradoSiguienteId || null } : {}),
       },
-      include: { nivel: true, carrera: true, secciones: true, gradoSiguiente: { select: { id: true, nombre: true } } },
+      include: { nivel: true, secciones: true, gradoSiguiente: { select: { id: true, nombre: true } } },
     });
     return NextResponse.json(grado);
   } catch (e: any) {
-    if (e.code === "P2002") return NextResponse.json({ error: "Ya existe un grado con ese nombre en ese nivel/carrera, o ese grado siguiente ya está asignado a otro grado" }, { status: 409 });
+    if (e.code === "P2002") return NextResponse.json({ error: "Ya existe un grado con ese nombre en ese nivel, o ese grado siguiente ya está asignado a otro grado" }, { status: 409 });
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }

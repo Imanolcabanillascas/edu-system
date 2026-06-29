@@ -22,7 +22,7 @@ export async function GET(req: Request) {
     where: alumnoId ? { id: alumnoId } : { seccionId },
     select: {
       id: true, dni: true, usuario: { select: { nombre: true } },
-      seccion: { select: { nombre: true, grado: { select: { nombre: true, carrera: true } } } },
+      seccion: { select: { nombre: true, grado: { select: { nombre: true } } } },
     },
     orderBy: { usuario: { nombre: "asc" } },
   });
@@ -59,7 +59,7 @@ export async function GET(req: Request) {
 
   if (seccionId && alumnos[0]?.seccion) {
     const s = alumnos[0].seccion;
-    drawText(`Sección: ${s.grado.nombre} "${s.nombre}"${s.grado.carrera ? " — " + s.grado.carrera.nombre : ""}`, margin, 11, false, colorMuted);
+    drawText(`Sección: ${s.grado.nombre} "${s.nombre}"`, margin, 11, false, colorMuted);
     y -= 16;
   }
   y -= 10;

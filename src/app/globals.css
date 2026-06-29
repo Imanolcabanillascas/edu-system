@@ -4,17 +4,17 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #0f0e17;
-  --surface: #1a1929;
-  --surface2: #232237;
-  --border: #2e2c4a;
-  --accent: #e8b86d;
-  --accent2: #7c6af5;
-  --accent3: #4ecdc4;
-  --text: #ede8f5;
-  --muted: #7a7599;
-  --danger: #e05c5c;
-  --green: #56c596;
+  --bg: #f5f6fa;
+  --surface: #ffffff;
+  --surface2: #f0f1f6;
+  --border: #e1e3ec;
+  --accent: #c8923f;
+  --accent2: #6952e0;
+  --accent3: #2d9e95;
+  --text: #1c1b29;
+  --muted: #6b6884;
+  --danger: #d14545;
+  --green: #2f9e6f;
   --radius: 14px;
   --sidebar-w: 240px;
 }

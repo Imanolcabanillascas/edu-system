@@ -39,6 +39,7 @@ tbody tr:hover { background: var(--surface2); }
 .overlay { position: fixed; inset: 0; background: #000000aa; z-index: 100;
   display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; }
 .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+  box-shadow: 0 8px 32px rgba(28, 27, 41, 0.12);
   width: 100%; max-width: 480px; padding: 32px; max-height: 90vh; overflow-y: auto; }
 .modal.modal-lg { max-width: 680px; }
 .modal h2 { font-family: 'DM Serif Display', serif; font-size: 1.4rem; margin-bottom: 24px; display: flex; align-items: center; gap: 10px; }
@@ -64,6 +65,7 @@ tbody tr:hover { background: var(--surface2); }
 
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px; }
 .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(28, 27, 41, 0.04);
   padding: 20px 24px; display: flex; align-items: center; gap: 16px; }
 .stat-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center;
   justify-content: center; flex-shrink: 0; }
@@ -71,7 +73,9 @@ tbody tr:hover { background: var(--surface2); }
 .stat-label { font-size: .78rem; color: var(--muted); }
 
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; }
-.info-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; transition: .15s; }
+.info-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; transition: .15s;
+  box-shadow: 0 1px 3px rgba(28, 27, 41, 0.04); }
+.info-card:hover { box-shadow: 0 4px 14px rgba(28, 27, 41, 0.08); }
 .info-card:hover { border-color: var(--accent2)66; }
 .info-card-title { font-weight: 600; margin-bottom: 10px; font-size: .95rem; display: flex; align-items: center; gap: 8px; justify-content: space-between; }
 .info-card-meta { font-size: .8rem; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }

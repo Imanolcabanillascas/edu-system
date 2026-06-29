@@ -9,7 +9,7 @@ export default function AcademicoPage() {
   const [anos, setAnos] = useState<any[]>([]);
   const [anoSel, setAnoSel] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"PRIMARIA" | "SECUNDARIA" | "SUPERIOR">("PRIMARIA");
+  const [tab, setTab] = useState<"PRIMARIA" | "SECUNDARIA">("PRIMARIA");
   const [error, setError] = useState("");
 
   const [editandoNivel, setEditandoNivel] = useState(false);
@@ -19,15 +19,11 @@ export default function AcademicoPage() {
   const [nuevoAnoForm, setNuevoAnoForm] = useState(new Date().getFullYear() + 1);
   const [savingAno, setSavingAno] = useState(false);
 
-  const [modalCarrera, setModalCarrera] = useState<null | "new" | any>(null);
-  const [nombreCarrera, setNombreCarrera] = useState("");
-  const [totalCiclosForm, setTotalCiclosForm] = useState(6);
-  const [modalGrado, setModalGrado] = useState<null | { carreraId?: string; editar?: any }>(null);
+  const [modalGrado, setModalGrado] = useState<null | { editar?: any }>(null);
   const [nombreGradoForm, setNombreGradoForm] = useState("");
   const [gradoSiguienteForm, setGradoSiguienteForm] = useState("");
   const [modalSeccion, setModalSeccion] = useState<null | { gradoId: string }>(null);
   const [nombreSeccionForm, setNombreSeccionForm] = useState("");
-  const [periodoForm, setPeriodoForm] = useState("I"); // I o II, solo para Superior
   const [saving, setSaving] = useState(false);
 
   const loadAnos = async () => {
@@ -76,7 +72,6 @@ export default function AcademicoPage() {
   };
 
   const nivelActual = niveles.find((n) => n.tipo === tab);
-  const esSuperior = tab === "SUPERIOR";
   const anoActivo = anos.find((a: any) => a.id === anoSel);
 
   const guardarNombreNivel = async () => {
@@ -88,40 +83,7 @@ export default function AcademicoPage() {
     loadNiveles(anoSel);
   };
 
-  const abrirNuevaCarrera = () => { setNombreCarrera(""); setTotalCiclosForm(6); setError(""); setModalCarrera("new"); };
-  const abrirEditarCarrera = (c: any) => { setNombreCarrera(c.nombre); setError(""); setModalCarrera(c); };
-  const guardarCarrera = async () => {
-    if (!nombreCarrera.trim() || !nivelActual) return;
-    const esNueva = modalCarrera === "new";
-    if (esNueva && (!totalCiclosForm || totalCiclosForm < 1)) {
-      setError("Indica cuántos ciclos tiene la carrera (mínimo 1)");
-      return;
-    }
-    setSaving(true); setError("");
-    const res = await fetch("/api/carreras", {
-      method: esNueva ? "POST" : "PUT",
-      body: JSON.stringify(
-        esNueva
-          ? { nombre: nombreCarrera, nivelId: nivelActual.id, totalCiclos: totalCiclosForm }
-          : { id: modalCarrera.id, nombre: nombreCarrera }
-      ),
-    });
-    setSaving(false);
-    if (!res.ok) { setError((await res.json()).error); return; }
-    setModalCarrera(null);
-    loadNiveles(anoSel);
-    const resG = await fetch("/api/grados");
-    setAllGrados(await resG.json());
-  };
-
-  const eliminarCarrera = async (id: string) => {
-    if (!confirm("¿Eliminar esta carrera? Debe no tener grados/ciclos asociados.")) return;
-    const res = await fetch("/api/carreras", { method: "DELETE", body: JSON.stringify({ id }) });
-    if (!res.ok) { alert((await res.json()).error); return; }
-    loadNiveles(anoSel);
-  };
-
-  const abrirNuevoGrado = (carreraId?: string) => { setNombreGradoForm(""); setGradoSiguienteForm(""); setError(""); setModalGrado({ carreraId }); };
+  const abrirNuevoGrado = () => { setNombreGradoForm(""); setGradoSiguienteForm(""); setError(""); setModalGrado({}); };
   const abrirEditarGrado = (g: any) => { setNombreGradoForm(g.nombre); setGradoSiguienteForm(g.gradoSiguienteId ?? ""); setError(""); setModalGrado({ editar: g }); };
   const guardarGrado = async () => {
     if (!nombreGradoForm.trim() || !nivelActual) return;
@@ -132,7 +94,7 @@ export default function AcademicoPage() {
       body: JSON.stringify(
         esEdicion
           ? { id: modalGrado.editar.id, nombre: nombreGradoForm, gradoSiguienteId: gradoSiguienteForm || null }
-          : { nombre: nombreGradoForm, nivelId: nivelActual.id, carreraId: modalGrado?.carreraId }
+          : { nombre: nombreGradoForm, nivelId: nivelActual.id }
       ),
     });
     setSaving(false);
@@ -144,22 +106,20 @@ export default function AcademicoPage() {
   };
 
   const eliminarGrado = async (id: string) => {
-    if (!confirm(`¿Eliminar este ${esSuperior ? "ciclo" : "grado"}? Debe no tener ${esSuperior ? "periodos" : "secciones"} ni materias asociadas.`)) return;
+    if (!confirm("¿Eliminar este grado? Debe no tener secciones ni materias asociadas.")) return;
     const res = await fetch("/api/grados", { method: "DELETE", body: JSON.stringify({ id }) });
     if (!res.ok) { alert((await res.json()).error); return; }
     loadNiveles(anoSel);
   };
 
   const abrirNuevaSeccion = (gradoId: string) => {
-    setNombreSeccionForm(""); setPeriodoForm("I"); setError("");
+    setNombreSeccionForm(""); setError("");
     setModalSeccion({ gradoId });
   };
   const crearSeccion = async () => {
-    if (!modalSeccion || !anoSel) return;
-    const nombre = esSuperior ? `${anoActivo.anio}-${periodoForm}` : nombreSeccionForm;
-    if (!nombre.trim()) return;
+    if (!modalSeccion || !anoSel || !nombreSeccionForm.trim()) return;
     setSaving(true); setError("");
-    const res = await fetch("/api/secciones", { method: "POST", body: JSON.stringify({ nombre, gradoId: modalSeccion.gradoId, anoLectivoId: anoSel }) });
+    const res = await fetch("/api/secciones", { method: "POST", body: JSON.stringify({ nombre: nombreSeccionForm, gradoId: modalSeccion.gradoId, anoLectivoId: anoSel }) });
     setSaving(false);
     if (!res.ok) { setError((await res.json()).error); return; }
     setModalSeccion(null);
@@ -167,24 +127,13 @@ export default function AcademicoPage() {
   };
 
   const eliminarSeccion = async (id: string) => {
-    if (!confirm(`¿Eliminar este ${esSuperior ? "periodo" : "sección"}? Debe no tener alumnos ni clases asociadas.`)) return;
+    if (!confirm("¿Eliminar esta sección? Debe no tener alumnos ni clases asociadas.")) return;
     const res = await fetch("/api/secciones", { method: "DELETE", body: JSON.stringify({ id }) });
     if (!res.ok) { alert((await res.json()).error); return; }
     loadNiveles(anoSel);
   };
 
-  const gradosPorCarrera = () => {
-    if (!nivelActual) return [];
-    if (!esSuperior) {
-      return [{ carrera: null, grados: nivelActual.grados.filter((g: any) => !g.carreraId) }];
-    }
-    return nivelActual.carreras.map((c: any) => ({
-      carrera: c,
-      grados: nivelActual.grados.filter((g: any) => g.carreraId === c.id),
-    }));
-  };
-
-  const cambiarTab = (t: "PRIMARIA" | "SECUNDARIA" | "SUPERIOR") => {
+  const cambiarTab = (t: "PRIMARIA" | "SECUNDARIA") => {
     setTab(t);
     setEditandoNivel(false);
   };
@@ -193,7 +142,7 @@ export default function AcademicoPage() {
     <div>
       <div className="page-header">
         <h1><IconLayers size={26} /> Estructura Académica</h1>
-        <p>Define años lectivos, carreras, grados/ciclos y secciones/periodos del colegio</p>
+        <p>Define años lectivos, grados y secciones del colegio</p>
       </div>
 
       <div className="toolbar" style={{ marginBottom: 20 }}>
@@ -215,7 +164,7 @@ export default function AcademicoPage() {
       </div>
 
       <div className="tabs">
-        {(["PRIMARIA", "SECUNDARIA", "SUPERIOR"] as const).map((t) => {
+        {(["PRIMARIA", "SECUNDARIA"] as const).map((t) => {
           const n = niveles.find((nv) => nv.tipo === t);
           return (
             <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => cambiarTab(t)}>
@@ -231,13 +180,6 @@ export default function AcademicoPage() {
         <div className="empty"><IconAlert size={28} style={{ color: "var(--muted)" }} /><p>No se pudo cargar este nivel</p></div>
       ) : (
         <>
-          {esSuperior && (
-            <div className="alert-banner" style={{ cursor: "default", background: "var(--accent2)15", borderColor: "var(--accent2)40", color: "var(--accent2)" }}>
-              <IconAlert size={16} />
-              En Superior cada ciclo se divide por periodos de ingreso (ej. {anoActivo?.anio ?? "2026"}-I, {anoActivo?.anio ?? "2026"}-II) en vez de secciones A/B/C.
-            </div>
-          )}
-
           <div className="toolbar">
             {editandoNivel ? (
               <div className="editable-title">
@@ -250,69 +192,50 @@ export default function AcademicoPage() {
               </button>
             )}
             <div style={{ flex: 1 }} />
-            {esSuperior ? (
-              <button className="btn btn-primary" onClick={abrirNuevaCarrera}><IconPlus size={16} /> Nueva carrera</button>
-            ) : (
-              <button className="btn btn-primary" onClick={() => abrirNuevoGrado(undefined)}><IconPlus size={16} /> Nuevo grado</button>
-            )}
+            <button className="btn btn-primary" onClick={abrirNuevoGrado}><IconPlus size={16} /> Nuevo grado</button>
           </div>
 
-          {gradosPorCarrera().map((grupo: any) => (
-            <div key={grupo.carrera?.id ?? "sin-carrera"} style={{ marginBottom: 28 }}>
-              {esSuperior && (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                  <h3 className="section-title" style={{ marginBottom: 0 }}>{grupo.carrera.nombre}</h3>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => abrirNuevoGrado(grupo.carrera.id)}><IconPlus size={13} /> Ciclo</button>
-                    <button className="btn btn-ghost btn-icon btn-sm" onClick={() => abrirEditarCarrera(grupo.carrera)}><IconEdit size={13} /></button>
-                    <button className="btn btn-danger btn-icon btn-sm" onClick={() => eliminarCarrera(grupo.carrera.id)}><IconTrash size={13} /></button>
-                  </div>
-                </div>
-              )}
-
-              {grupo.grados.length === 0 ? (
-                <div className="empty" style={{ padding: "30px 20px" }}>
-                  <p>{esSuperior ? "Sin ciclos creados para esta carrera" : "Sin grados creados"}</p>
-                </div>
-              ) : (
-                <div className="card-grid">
-                  {grupo.grados.map((g: any) => (
-                    <div className="info-card" key={g.id}>
-                      <div className="info-card-title">
-                        {g.nombre}
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <button className="btn btn-ghost btn-icon btn-sm" onClick={() => abrirEditarGrado(g)}><IconEdit size={13} /></button>
-                          <button className="btn btn-danger btn-icon btn-sm" onClick={() => eliminarGrado(g.id)}><IconTrash size={13} /></button>
-                        </div>
-                      </div>
-                      <div className="muted-label" style={{ marginBottom: 10 }}>
-                        {esSuperior ? "Periodos de ingreso" : "Secciones"} — {anoActivo?.anio}
-                      </div>
-                      {g.gradoSiguiente ? (
-                        <div className="form-hint" style={{ marginBottom: 8 }}>→ Siguiente: {g.gradoSiguiente.nombre}</div>
-                      ) : (
-                        <div className="form-hint" style={{ marginBottom: 8, color: "var(--accent)" }}>Sin grado siguiente — se egresa al aprobar</div>
-                      )}
-                      <div className="chips">
-                        {g.secciones.length === 0 && <span style={{ color: "var(--muted)", fontSize: ".8rem" }}>{esSuperior ? "Sin periodos" : "Sin secciones"} este año</span>}
-                        {g.secciones.map((s: any) => (
-                          <span key={s.id} className="chip" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            {s.nombre}
-                            <button onClick={() => eliminarSeccion(s.id)} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", padding: 0, display: "flex" }}>
-                              <IconTrash size={11} />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                      <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => abrirNuevaSeccion(g.id)}>
-                        <IconPlus size={13} /> {esSuperior ? "Agregar periodo" : "Agregar sección"}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+          {nivelActual.grados.length === 0 ? (
+            <div className="empty" style={{ padding: "30px 20px" }}>
+              <p>Sin grados creados</p>
             </div>
-          ))}
+          ) : (
+            <div className="card-grid">
+              {nivelActual.grados.map((g: any) => (
+                <div className="info-card" key={g.id}>
+                  <div className="info-card-title">
+                    {g.nombre}
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button className="btn btn-ghost btn-icon btn-sm" onClick={() => abrirEditarGrado(g)}><IconEdit size={13} /></button>
+                      <button className="btn btn-danger btn-icon btn-sm" onClick={() => eliminarGrado(g.id)}><IconTrash size={13} /></button>
+                    </div>
+                  </div>
+                  <div className="muted-label" style={{ marginBottom: 10 }}>
+                    Secciones — {anoActivo?.anio}
+                  </div>
+                  {g.gradoSiguiente ? (
+                    <div className="form-hint" style={{ marginBottom: 8 }}>→ Siguiente: {g.gradoSiguiente.nombre}</div>
+                  ) : (
+                    <div className="form-hint" style={{ marginBottom: 8, color: "var(--accent)" }}>Sin grado siguiente — se egresa al aprobar</div>
+                  )}
+                  <div className="chips">
+                    {g.secciones.length === 0 && <span style={{ color: "var(--muted)", fontSize: ".8rem" }}>Sin secciones este año</span>}
+                    {g.secciones.map((s: any) => (
+                      <span key={s.id} className="chip" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        {s.nombre}
+                        <button onClick={() => eliminarSeccion(s.id)} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", padding: 0, display: "flex" }}>
+                          <IconTrash size={11} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => abrirNuevaSeccion(g.id)}>
+                    <IconPlus size={13} /> Agregar sección
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
 
@@ -323,7 +246,9 @@ export default function AcademicoPage() {
             {error && <div className="alert-error">{error}</div>}
             <div className="form-group"><label>Año</label>
               <input type="number" value={nuevoAnoForm} onChange={(e) => setNuevoAnoForm(Number(e.target.value))} /></div>
-            <div className="form-hint" style={{ marginBottom: 14 }}>Se marcará como año activo automáticamente.</div>
+            <div className="form-hint" style={{ marginBottom: 14 }}>
+              Se marcará como año activo automáticamente. Si es el primer año lectivo del sistema, también se crearán automáticamente los grados de 1ro a 6to de Primaria y de 1ro a 5to de Secundaria, ya enlazados en secuencia.
+            </div>
             <div className="modal-actions">
               <button className="btn btn-ghost" onClick={() => setModalAno(false)}>Cancelar</button>
               <button className="btn btn-primary" onClick={crearAno} disabled={savingAno}>{savingAno ? "Creando…" : "Crear año"}</button>
@@ -332,43 +257,20 @@ export default function AcademicoPage() {
         </div>
       )}
 
-      {modalCarrera && (
-        <div className="overlay" onClick={(e) => e.target === e.currentTarget && setModalCarrera(null)}>
-          <div className="modal">
-            <h2><IconLayers size={20} /> {modalCarrera === "new" ? "Nueva carrera" : "Editar carrera"}</h2>
-            {error && <div className="alert-error">{error}</div>}
-            <div className="form-group"><label>Nombre de la carrera</label>
-              <input value={nombreCarrera} onChange={(e) => setNombreCarrera(e.target.value)} placeholder="Ej: Enfermería" /></div>
-            {modalCarrera === "new" && (
-              <div className="form-group"><label>¿Cuántos ciclos tiene esta carrera?</label>
-                <input type="number" min={1} max={20} value={totalCiclosForm} onChange={(e) => setTotalCiclosForm(Number(e.target.value))} />
-                <div className="form-hint">
-                  Se crearán automáticamente "Ciclo 1" a "Ciclo {totalCiclosForm}", ya enlazados en secuencia. El Ciclo es fijo en la malla de la carrera; cada periodo de matrícula (ej. "{anoActivo?.anio ?? 2026}-I") se asigna después por separado en cada ciclo.
-                </div>
-              </div>
-            )}
-            <div className="modal-actions">
-              <button className="btn btn-ghost" onClick={() => setModalCarrera(null)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={guardarCarrera} disabled={saving}>{saving ? "Guardando…" : "Guardar"}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {modalGrado && (
         <div className="overlay" onClick={(e) => e.target === e.currentTarget && setModalGrado(null)}>
           <div className="modal">
-            <h2><IconLayers size={20} /> {modalGrado.editar ? "Editar" : "Nuevo"} {esSuperior ? "ciclo" : "grado"}</h2>
+            <h2><IconLayers size={20} /> {modalGrado.editar ? "Editar" : "Nuevo"} grado</h2>
             {error && <div className="alert-error">{error}</div>}
-            <div className="form-group"><label>{esSuperior ? "Nombre del ciclo" : "Nombre del grado"}</label>
-              <input value={nombreGradoForm} onChange={(e) => setNombreGradoForm(e.target.value)} placeholder={esSuperior ? "Ej: Ciclo 1" : "Ej: 1er Grado"} /></div>
+            <div className="form-group"><label>Nombre del grado</label>
+              <input value={nombreGradoForm} onChange={(e) => setNombreGradoForm(e.target.value)} placeholder="Ej: 1er Grado" /></div>
             {modalGrado.editar && (
               <div className="form-group"><label>Grado siguiente (a dónde pasa un alumno que aprueba aquí)</label>
                 <select value={gradoSiguienteForm} onChange={(e) => setGradoSiguienteForm(e.target.value)}>
                   <option value="">Ninguno — es el último (egresa al aprobar)</option>
                   {allGrados.filter((g: any) => g.id !== modalGrado.editar.id).map((g: any) => (
                     <option key={g.id} value={g.id}>
-                      {g.nombre} — {NIVEL_LABEL[g.nivel.tipo]}{g.carrera ? ` (${g.carrera.nombre})` : ""}
+                      {g.nombre} — {NIVEL_LABEL[g.nivel.tipo]}
                     </option>
                   ))}
                 </select>
@@ -386,19 +288,10 @@ export default function AcademicoPage() {
       {modalSeccion && (
         <div className="overlay" onClick={(e) => e.target === e.currentTarget && setModalSeccion(null)}>
           <div className="modal">
-            <h2><IconLayers size={20} /> {esSuperior ? "Nuevo periodo de ingreso" : "Nueva sección"} — {anoActivo?.anio}</h2>
+            <h2><IconLayers size={20} /> Nueva sección — {anoActivo?.anio}</h2>
             {error && <div className="alert-error">{error}</div>}
-            {esSuperior ? (
-              <div className="form-group"><label>Periodo</label>
-                <select value={periodoForm} onChange={(e) => setPeriodoForm(e.target.value)}>
-                  <option value="I">I</option>
-                  <option value="II">II</option>
-                </select></div>
-            ) : (
-              <div className="form-group"><label>Nombre de la sección</label>
-                <input value={nombreSeccionForm} onChange={(e) => setNombreSeccionForm(e.target.value.toUpperCase())} placeholder="Ej: A" maxLength={3} /></div>
-            )}
-            {esSuperior && <div className="form-hint" style={{ marginBottom: 14 }}>Se creará el código "{anoActivo?.anio}-{periodoForm}"</div>}
+            <div className="form-group"><label>Nombre de la sección</label>
+              <input value={nombreSeccionForm} onChange={(e) => setNombreSeccionForm(e.target.value.toUpperCase())} placeholder="Ej: A" maxLength={3} /></div>
             <div className="modal-actions">
               <button className="btn btn-ghost" onClick={() => setModalSeccion(null)}>Cancelar</button>
               <button className="btn btn-primary" onClick={crearSeccion} disabled={saving}>{saving ? "Guardando…" : "Guardar"}</button>

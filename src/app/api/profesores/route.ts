@@ -13,7 +13,7 @@ export async function GET() {
       id: true, dni: true, telefono: true,
       usuario: { select: { id: true, nombre: true, email: true } },
       clases: { select: { id: true } },
-      materias: { select: { materia: { select: { id: true, nombre: true, grado: { select: { nombre: true, carrera: { select: { nombre: true } } } } } } } },
+      materias: { select: { materia: { select: { id: true, nombre: true, grado: { select: { nombre: true } } } } } },
     },
     orderBy: { usuario: { nombre: "asc" } },
   });
@@ -40,9 +40,22 @@ export async function POST(req: Request) {
   }
 
   try {
-    const existente = await prisma.usuario.findUnique({ where: { email: emailNorm } });
-    if (existente) {
+    const [existenteEmail, existenteDni] = await Promise.all([
+      prisma.usuario.findUnique({ where: { email: emailNorm }, select: { id: true } }),
+      prisma.profesor.findUnique({ where: { dni }, select: { id: true } }),
+    ]);
+    if (existenteEmail) {
       return NextResponse.json({ error: "Ese email ya está registrado" }, { status: 409 });
+    }
+    if (existenteDni) {
+      return NextResponse.json({ error: "Ya existe un profesor registrado con ese DNI" }, { status: 409 });
+    }
+    // El mismo DNI no puede pertenecer a un Profesor y a un Alumno a la vez —
+    // son roles separados en el sistema; si la persona cambia de rol, debe
+    // eliminarse el registro anterior antes de crear el nuevo.
+    const dniComoAlumno = await prisma.alumno.findUnique({ where: { dni }, select: { id: true } });
+    if (dniComoAlumno) {
+      return NextResponse.json({ error: "Ese DNI ya está registrado como Alumno. Elimina ese registro antes de crear un Profesor con el mismo DNI." }, { status: 409 });
     }
 
     const hash = await bcrypt.hash(password, 10);
@@ -84,6 +97,22 @@ export async function PUT(req: Request) {
   }
 
   try {
+    // Verifica que el DNI no pertenezca a OTRO profesor, ni a ningún alumno
+    const [dniEnOtroProfesor, dniComoAlumno, emailEnOtroUsuario] = await Promise.all([
+      prisma.profesor.findFirst({ where: { dni, id: { not: id } }, select: { id: true } }),
+      prisma.alumno.findUnique({ where: { dni }, select: { id: true } }),
+      prisma.usuario.findFirst({ where: { email: email.toLowerCase().trim(), profesor: { id: { not: id } } }, select: { id: true } }),
+    ]);
+    if (dniEnOtroProfesor) {
+      return NextResponse.json({ error: "Ese DNI ya pertenece a otro profesor" }, { status: 409 });
+    }
+    if (dniComoAlumno) {
+      return NextResponse.json({ error: "Ese DNI ya está registrado como Alumno" }, { status: 409 });
+    }
+    if (emailEnOtroUsuario) {
+      return NextResponse.json({ error: "Ese email ya está en uso por otra cuenta" }, { status: 409 });
+    }
+
     await prisma.profesorMateria.deleteMany({ where: { profesorId: id } });
     const profesor = await prisma.profesor.update({
       where: { id },

@@ -41,21 +41,20 @@ model Profesor {
 }
 
 // ─── Estructura académica ────────────────────────────────────────
-// Nivel (Primaria/Secundaria/Superior, nombre editable) → Carrera (solo Superior, opcional)
-// → Grado (1ro, 2do... o Ciclo 1, Ciclo 2...) → Sección (A, B, C...)
+// Nivel (Primaria/Secundaria, nombre editable) → Grado (1ro, 2do...) → Sección (A, B, C...)
 // El orden de aparición en listas es siempre por orden de creación (createdAt), sin campo manual.
+// Nota: el nivel Superior se removió de este sistema por su complejidad propia
+// (carreras, ciclos, periodos) — se manejará en un sistema aparte si se retoma.
 
 enum TipoNivel {
   PRIMARIA
   SECUNDARIA
-  SUPERIOR
 }
 
 // ─── Año lectivo ──────────────────────────────────────────────────
 // Entidad raíz que ancla toda la operación de un año específico: cada Sección
-// (de cualquier nivel) y cada Matrícula pertenecen a un Año Lectivo concreto.
-// Solo puede haber un año "activo" a la vez — es el que usan los formularios
-// por defecto al crear secciones/matrículas nuevas.
+// y cada Matrícula pertenecen a un Año Lectivo concreto. Solo puede haber un
+// año "activo" a la vez — es el que usan los formularios por defecto.
 model AnoLectivo {
   id        String   @id @default(cuid())
   anio      Int      @unique // 2026, 2027...
@@ -69,10 +68,9 @@ model AnoLectivo {
 model Nivel {
   id        String    @id @default(cuid())
   nombre    String // editable por el admin, ej. "Primaria"
-  tipo      TipoNivel @unique // fijo internamente; SUPERIOR usa "periodos" (códigos 2026-I) en vez de secciones A/B/C
+  tipo      TipoNivel @unique // fijo internamente, no editable
   createdAt DateTime  @default(now())
 
-  carreras Carrera[]
   grados   Grado[]
   criterio CriterioEvaluacion?
 }
@@ -91,46 +89,30 @@ model CriterioEvaluacion {
   nivel Nivel @relation(fields: [nivelId], references: [id], onDelete: Cascade)
 }
 
-// Solo aplica a nivel Superior. Para Primaria/Secundaria, Grado.carreraId queda null.
-model Carrera {
-  id        String   @id @default(cuid())
-  nombre    String
-  nivelId   String
-  createdAt DateTime @default(now())
-
-  nivel  Nivel   @relation(fields: [nivelId], references: [id], onDelete: Cascade)
-  grados Grado[]
-
-  @@unique([nivelId, nombre])
-}
-
 model Grado {
   id        String   @id @default(cuid())
   nombre    String
   nivelId   String
-  carreraId String? // solo si el nivel es Superior
-  ordenSecuencia   Int     @default(0) // 1, 2, 3... define el orden de progresión dentro de su línea (nivel o carrera)
+  ordenSecuencia   Int     @default(0) // 1, 2, 3... define el orden de progresión dentro del nivel
   gradoSiguienteId String? @unique // a qué grado se promueve un alumno que aprueba aquí; null = es el último (egresa)
   createdAt DateTime @default(now())
 
   nivel           Nivel     @relation(fields: [nivelId], references: [id], onDelete: Cascade)
-  carrera         Carrera?  @relation(fields: [carreraId], references: [id], onDelete: Cascade)
   gradoSiguiente  Grado?    @relation("SecuenciaGrado", fields: [gradoSiguienteId], references: [id])
   gradoAnterior   Grado?    @relation("SecuenciaGrado")
   secciones Seccion[]
   materias  Materia[]
 
-  @@unique([nivelId, carreraId, nombre])
+  @@unique([nivelId, nombre])
 }
 
 // Agrupación de alumnos dentro de un Grado, siempre anclada a un Año Lectivo.
-// - Primaria/Secundaria: funciona como "sección" tradicional (A, B, C). Cada año
-//   se crea una sección nueva para ese grado (ej. "1er Grado A" de 2026 es un
-//   registro distinto de "1er Grado A" de 2027), incluso si el nombre se repite.
-// - Superior: el "nombre" funciona como código de periodo (ej. "2026-I").
+// Funciona como "sección" tradicional (A, B, C). Cada año se crea una sección
+// nueva para ese grado (ej. "1er Grado A" de 2026 es un registro distinto de
+// "1er Grado A" de 2027), incluso si el nombre se repite.
 model Seccion {
   id           String     @id @default(cuid())
-  nombre       String // "A", "B", "C" en colegio; "2026-I", "2026-II" en Superior
+  nombre       String // "A", "B", "C"
   gradoId      String
   anoLectivoId String
   createdAt    DateTime   @default(now())

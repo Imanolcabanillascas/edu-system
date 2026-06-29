@@ -16,7 +16,7 @@ export async function GET(req: Request) {
     select: {
       id: true, nombre: true, gradoId: true, anoLectivoId: true,
       anoLectivo: { select: { anio: true } },
-      grado: { select: { nombre: true, nivel: true, carrera: true } },
+      grado: { select: { nombre: true, nivel: true } },
       alumnos: { select: { id: true } },
     },
   });
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
       select: {
         id: true, nombre: true, anoLectivoId: true,
         anoLectivo: { select: { anio: true } },
-        grado: { select: { nombre: true, nivel: true, carrera: true } },
+        grado: { select: { nombre: true, nivel: true } },
       },
     });
     return NextResponse.json(seccion, { status: 201 });

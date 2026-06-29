@@ -90,7 +90,7 @@ export default function ReportesPage() {
       ).slice(0, 8)
     : [];
 
-  const nombreSeccion = (s: any) => `${s.grado.nombre} "${s.nombre}"${s.grado.carrera ? " — " + s.grado.carrera.nombre : ""}`;
+  const nombreSeccion = (s: any) => `${s.grado.nombre} "${s.nombre}"`;
 
   const generarPdf = async () => {
     if (!reporte) return;

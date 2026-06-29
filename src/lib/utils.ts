@@ -52,6 +52,8 @@ export function estadoColor(estado: string) {
     CERRADA: "#4ecdc4",
     ENTREGADA: "#56c596",
     CALIFICADA: "#7c6af5",
+    ENTREGADO: "#56c596",
+    CALIFICADO: "#7c6af5",
     FUERA_DE_PLAZO: "#e05c5c",
   };
   return map[estado] ?? "#7a7599";
@@ -69,21 +71,16 @@ export const MEDIOS_PAGO = [
 export const NIVEL_LABEL: Record<string, string> = {
   PRIMARIA: "Primaria",
   SECUNDARIA: "Secundaria",
-  SUPERIOR: "Superior",
 };
 
-/** Nombre completo de un grado, incluyendo carrera si aplica (Superior) */
-export function nombreGrado(grado: { nombre: string; carrera?: { nombre: string } | null; nivel?: { nombre: string } }) {
-  if (grado.carrera) return `${grado.nombre} — ${grado.carrera.nombre}`;
+/** Nombre del grado, ej. "3er Grado" */
+export function nombreGrado(grado: { nombre: string; nivel?: { nombre: string } }) {
   return grado.nombre;
 }
 
-/** Nombre completo de una sección: "3er Grado A — Primaria" o "Ciclo 1 A — Enfermería" */
-export function nombreSeccion(seccion: { nombre: string; grado: { nombre: string; carrera?: { nombre: string } | null; nivel: { nombre: string } } }) {
-  const base = seccion.grado.carrera
-    ? `${seccion.grado.nombre} "${seccion.nombre}" — ${seccion.grado.carrera.nombre}`
-    : `${seccion.grado.nombre} "${seccion.nombre}" — ${seccion.grado.nivel.nombre}`;
-  return base;
+/** Nombre completo de una sección: "3er Grado A — Primaria" */
+export function nombreSeccion(seccion: { nombre: string; grado: { nombre: string; nivel: { nombre: string } } }) {
+  return `${seccion.grado.nombre} "${seccion.nombre}" — ${seccion.grado.nivel.nombre}`;
 }
 
 /** Nombre de una clase a partir de Materia + Sección, ej: "Matemáticas — 3er Grado A" */

@@ -26,7 +26,6 @@ export async function GET(req: Request) {
         select: {
           id: true, nombre: true, ordenSecuencia: true,
           nivel: { select: { id: true, nombre: true, tipo: true } },
-          carrera: { select: { id: true, nombre: true } },
           gradoSiguiente: { select: { id: true, nombre: true } },
         },
       },
