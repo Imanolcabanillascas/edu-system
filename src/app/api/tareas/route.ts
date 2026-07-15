@@ -10,7 +10,7 @@ const claseSelect = {
     id: true,
     horario: true,
     salon: true,
-    materia: { select: { nombre: true } },
+    planEstudio: { select: { materia: { select: { nombre: true } } } },
     seccion: { select: { nombre: true, grado: { select: { nombre: true } } } },
   },
 };
@@ -21,7 +21,7 @@ export async function GET() {
 
   const usuario = await prisma.usuario.findUnique({
     where: { id: (session.user as any).id },
-    select: { rol: true, profesor: { select: { id: true } }, alumno: { select: { id: true } } },
+    select: { rol: true, profesor: { select: { id: true } }, alumno: { select: { id: true, seccionId: true } } },
   });
   if (!usuario) return NextResponse.json([]);
 
@@ -32,7 +32,7 @@ export async function GET() {
       select: {
         id: true, titulo: true, descripcion: true, archivoUrl: true, archivoNombre: true,
         fechaInicio: true, fechaLimite: true, estado: true, claseId: true,
-        clase: { select: { ...claseSelect.select, alumnos: { select: { alumnoId: true } } } },
+        clase: { select: { ...claseSelect.select, seccion: { select: { nombre: true, grado: { select: { nombre: true } }, alumnos: { select: { id: true } } } } } },
         entregas: {
           select: {
             id: true, estado: true, nota: true, archivoUrl: true, archivoNombre: true, alumnoId: true,
@@ -42,11 +42,13 @@ export async function GET() {
       },
       orderBy: { fechaLimite: "asc" },
     });
-  } else if (usuario.rol === "ALUMNO" && usuario.alumno) {
-    const clases = await prisma.alumnoClase.findMany({ where: { alumnoId: usuario.alumno.id }, select: { claseId: true } });
-    const claseIds = clases.map((c) => c.claseId);
+  } else if (usuario.rol === "ALUMNO" && usuario.alumno?.seccionId) {
+    // El alumno obtiene sus tareas via las clases de su sección, sin AlumnoClase
     tareas = await prisma.tarea.findMany({
-      where: { claseId: { in: claseIds }, estado: "PUBLICADA" },
+      where: {
+        clase: { seccionId: usuario.alumno.seccionId },
+        estado: "PUBLICADA",
+      },
       select: {
         id: true, titulo: true, descripcion: true, archivoUrl: true, archivoNombre: true,
         fechaInicio: true, fechaLimite: true, estado: true, claseId: true,

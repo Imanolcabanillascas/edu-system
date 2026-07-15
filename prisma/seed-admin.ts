@@ -7,6 +7,10 @@
 //
 // Es idempotente: si el email ya existe, no hace nada y simplemente lo informa.
 
+import * as dotenv from "dotenv";
+import { resolve } from "path";
+dotenv.config({ path: resolve(process.cwd(), ".env") });
+
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";

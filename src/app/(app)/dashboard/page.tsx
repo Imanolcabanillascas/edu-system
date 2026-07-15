@@ -19,7 +19,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     select: {
       nombre: true, rol: true,
       profesor: { select: { id: true, dni: true } },
-      alumno: { select: { id: true, dni: true, matricula: { select: { estado: true } } } },
+      alumno: { select: { id: true, dni: true, seccionId: true, seccion: { select: { id: true } }, matricula: { select: { estado: true } } } },
     },
   });
   if (!usuario) redirect("/sign-in");
@@ -48,9 +48,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         select: {
           id: true, horario: true, salon: true,
           profesor: { select: { usuario: { select: { nombre: true } } } },
-          alumnos: { select: { alumnoId: true } },
-          materia: { select: { nombre: true } },
-          seccion: { select: { nombre: true, grado: { select: { nombre: true } } } },
+          planEstudio: { select: { materia: { select: { nombre: true } } } },
+          seccion: { select: { nombre: true, grado: { select: { nombre: true } }, alumnos: { select: { id: true } } } },
         },
       }),
     ]);
@@ -73,12 +72,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <div className="card-grid">
           {clasesRecientes.map((c) => (
             <div className="info-card" key={c.id}>
-              <div className="info-card-title">{c.materia.nombre} — {c.seccion.grado.nombre} "{c.seccion.nombre}"</div>
+              <div className="info-card-title">{c.planEstudio.materia.nombre} — {c.seccion.grado.nombre} "{c.seccion.nombre}"</div>
               <div className="info-card-meta">
                 <span>{c.profesor.usuario.nombre}</span>
                 <span>{c.horario}</span>
                 <span>{c.salon}</span>
-                <span>{c.alumnos.length} alumnos</span>
+                <span>{c.seccion.alumnos?.length ?? 0} alumnos</span>
               </div>
             </div>
           ))}
@@ -89,18 +88,18 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   if (usuario.rol === "PROFESOR" && usuario.profesor) {
     const [clases, tareas, examenes] = await Promise.all([
-      prisma.clase.findMany({ where: { profesorId: usuario.profesor.id }, select: { alumnos: { select: { alumnoId: true } } } }),
+      prisma.clase.findMany({ where: { profesorId: usuario.profesor.id }, select: { seccion: { select: { alumnos: { select: { id: true } } } } } }),
       prisma.tarea.count({ where: { profesorId: usuario.profesor.id } }),
       prisma.examen.findMany({
         where: { profesorId: usuario.profesor.id, fechaLimite: { gte: nowPeru() } },
         orderBy: { fechaLimite: "asc" }, take: 3,
         select: {
           id: true, titulo: true, fechaLimite: true, duracion: true,
-          clase: { select: { materia: { select: { nombre: true } }, seccion: { select: { nombre: true, grado: { select: { nombre: true } } } } } },
+          clase: { select: { planEstudio: { select: { materia: { select: { nombre: true } } } }, seccion: { select: { nombre: true, grado: { select: { nombre: true } } } } } },
         },
       }),
     ]);
-    const totalAlumnos = clases.reduce((acc, c) => acc + c.alumnos.length, 0);
+    const totalAlumnos = clases.reduce((acc, c) => acc + (c.seccion?.alumnos?.length ?? 0), 0);
 
     return (
       <div>
@@ -122,7 +121,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <div className="info-card" key={e.id}>
                 <div className="info-card-title">{e.titulo}</div>
                 <div className="info-card-meta">
-                  <span>{e.clase.materia.nombre} — {e.clase.seccion.grado.nombre} "{e.clase.seccion.nombre}"</span>
+                  <span>{e.clase.planEstudio.materia.nombre} — {e.clase.seccion.grado.nombre} "{e.clase.seccion.nombre}"</span>
                   <span>Vence: {formatDateTime(e.fechaLimite)}</span>
                   <span>{e.duracion} min</span>
                 </div>
@@ -135,21 +134,23 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   }
 
   if (usuario.rol === "ALUMNO" && usuario.alumno) {
+    const seccionId = usuario.alumno.seccion?.id ?? null;
     const [seccionInfo, clases, tareasPendientes, proximoExamen] = await Promise.all([
       prisma.alumno.findUnique({
         where: { id: usuario.alumno.id },
         select: { anoIngreso: true, seccion: { select: { nombre: true, grado: { select: { nombre: true } } } } },
       }),
-      prisma.alumnoClase.count({ where: { alumnoId: usuario.alumno.id } }),
+      // Clases via sección — sin AlumnoClase
+      seccionId ? prisma.clase.count({ where: { seccionId } }) : Promise.resolve(0),
       prisma.entrega.count({ where: { alumnoId: usuario.alumno.id, estado: "PENDIENTE" } }),
-      prisma.examen.findFirst({
-        where: { clase: { alumnos: { some: { alumnoId: usuario.alumno.id } } }, fechaLimite: { gte: nowPeru() } },
+      seccionId ? prisma.examen.findFirst({
+        where: { clase: { seccionId }, fechaLimite: { gte: nowPeru() } },
         orderBy: { fechaLimite: "asc" },
         select: {
           id: true, titulo: true, fechaLimite: true, duracion: true,
-          clase: { select: { materia: { select: { nombre: true } }, seccion: { select: { nombre: true, grado: { select: { nombre: true } } } } } },
+          clase: { select: { planEstudio: { select: { materia: { select: { nombre: true } } } }, seccion: { select: { nombre: true, grado: { select: { nombre: true } } } } } },
         },
-      }),
+      }) : Promise.resolve(null),
     ]);
     const matricula = usuario.alumno.matricula;
 
@@ -181,7 +182,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             <div className="info-card" style={{ maxWidth: 320 }}>
               <div className="info-card-title">{proximoExamen.titulo}</div>
               <div className="info-card-meta">
-                <span>{proximoExamen.clase.materia.nombre} — {proximoExamen.clase.seccion.grado.nombre} "{proximoExamen.clase.seccion.nombre}"</span>
+                <span>{proximoExamen.clase.planEstudio.materia.nombre} — {proximoExamen.clase.seccion.grado.nombre} "{proximoExamen.clase.seccion.nombre}"</span>
                 <span>Vence: {formatDateTime(proximoExamen.fechaLimite)}</span>
                 <span>{proximoExamen.duracion} min</span>
               </div>

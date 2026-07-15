@@ -42,7 +42,7 @@ export async function GET(req: Request) {
           secciones: {
             where: anoLectivoId ? { anoLectivoId } : undefined,
             orderBy: { createdAt: "asc" },
-            include: { anoLectivo: true },
+            include: { anoLectivo: true, profesorTutor: { select: { id: true, usuario: { select: { nombre: true } } } } },
           },
           gradoSiguiente: { select: { id: true, nombre: true } },
         },

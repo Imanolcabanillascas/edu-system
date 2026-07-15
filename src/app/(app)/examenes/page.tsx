@@ -44,7 +44,7 @@ export default function ExamenesPage() {
   useEffect(() => { load(); }, []);
 
   const isProfesor = rol === "PROFESOR";
-  const nombreClase = (c: any) => c ? `${c.materia.nombre} — ${c.seccion.grado.nombre} "${c.seccion.nombre}"` : "";
+  const nombreClase = (c: any) => c ? `${c.planEstudio.materia.nombre} — ${c.seccion.grado.nombre} "${c.seccion.nombre}"` : "";
 
   const openNew = () => {
     setError("");

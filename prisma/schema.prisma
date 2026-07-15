@@ -33,31 +33,19 @@ model Profesor {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  usuario  Usuario           @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  materias ProfesorMateria[]
-  clases   Clase[]
-  tareas   Tarea[]
-  examenes Examen[]
+  usuario        Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  clases         Clase[]
+  tareas         Tarea[]
+  examenes       Examen[]
+  seccionesTutor Seccion[]
+  // ProfesorMateria eliminado: la relación Profesor↔Materia se deduce
+  // via Clase (un profesor dicta una materia en una sección concreta).
 }
 
-// ─── Estructura académica ────────────────────────────────────────
-// Nivel (Primaria/Secundaria, nombre editable) → Grado (1ro, 2do...) → Sección (A, B, C...)
-// El orden de aparición en listas es siempre por orden de creación (createdAt), sin campo manual.
-// Nota: el nivel Superior se removió de este sistema por su complejidad propia
-// (carreras, ciclos, periodos) — se manejará en un sistema aparte si se retoma.
-
-enum TipoNivel {
-  PRIMARIA
-  SECUNDARIA
-}
-
-// ─── Año lectivo ──────────────────────────────────────────────────
-// Entidad raíz que ancla toda la operación de un año específico: cada Sección
-// y cada Matrícula pertenecen a un Año Lectivo concreto. Solo puede haber un
-// año "activo" a la vez — es el que usan los formularios por defecto.
+// ─── Año Lectivo ─────────────────────────────────────────────────────────────
 model AnoLectivo {
   id        String   @id @default(cuid())
-  anio      Int      @unique // 2026, 2027...
+  anio      Int      @unique
   activo    Boolean  @default(false)
   createdAt DateTime @default(now())
 
@@ -65,93 +53,135 @@ model AnoLectivo {
   matriculas Matricula[]
 }
 
+// ─── Estructura Académica ─────────────────────────────────────────────────────
+enum TipoNivel {
+  PRIMARIA
+  SECUNDARIA
+}
+
 model Nivel {
   id        String    @id @default(cuid())
-  nombre    String // editable por el admin, ej. "Primaria"
-  tipo      TipoNivel @unique // fijo internamente, no editable
+  nombre    String
+  tipo      TipoNivel @unique
   createdAt DateTime  @default(now())
 
   grados   Grado[]
   criterio CriterioEvaluacion?
 }
 
-// Define cómo se pondera la nota final de una materia dentro de un Nivel:
-// notaFinal = promedioTareas * (pesoTareas/100) + promedioExamenes * (pesoExamenes/100)
-// pesoTareas + pesoExamenes debe sumar 100 (se valida en la API, no en el schema).
 model CriterioEvaluacion {
-  id          String   @id @default(cuid())
-  nivelId     String   @unique
-  pesoTareas  Int      @default(40)
-  pesoExamenes Int     @default(60)
-  notaAprobatoria Float @default(10.5)
-  updatedAt   DateTime @updatedAt
+  id               String   @id @default(cuid())
+  nivelId          String   @unique
+  pesoTareas       Int      @default(40)
+  pesoExamenes     Int      @default(60)
+  notaAprobatoria  Float    @default(10.5)
+  updatedAt        DateTime @updatedAt
 
   nivel Nivel @relation(fields: [nivelId], references: [id], onDelete: Cascade)
 }
 
 model Grado {
-  id        String   @id @default(cuid())
-  nombre    String
-  nivelId   String
-  ordenSecuencia   Int     @default(0) // 1, 2, 3... define el orden de progresión dentro del nivel
-  gradoSiguienteId String? @unique // a qué grado se promueve un alumno que aprueba aquí; null = es el último (egresa)
-  createdAt DateTime @default(now())
+  id               String   @id @default(cuid())
+  nombre           String
+  nivelId          String
+  ordenSecuencia   Int      @default(0)
+  gradoSiguienteId String?  @unique
+  createdAt        DateTime @default(now())
 
-  nivel           Nivel     @relation(fields: [nivelId], references: [id], onDelete: Cascade)
-  gradoSiguiente  Grado?    @relation("SecuenciaGrado", fields: [gradoSiguienteId], references: [id])
-  gradoAnterior   Grado?    @relation("SecuenciaGrado")
-  secciones Seccion[]
-  materias  Materia[]
+  nivel          Nivel         @relation(fields: [nivelId], references: [id], onDelete: Cascade)
+  gradoSiguiente Grado?        @relation("SecuenciaGrado", fields: [gradoSiguienteId], references: [id])
+  gradoAnterior  Grado?        @relation("SecuenciaGrado")
+  secciones      Seccion[]
+  planEstudios   PlanEstudio[]
 
   @@unique([nivelId, nombre])
 }
 
-// Agrupación de alumnos dentro de un Grado, siempre anclada a un Año Lectivo.
-// Funciona como "sección" tradicional (A, B, C). Cada año se crea una sección
-// nueva para ese grado (ej. "1er Grado A" de 2026 es un registro distinto de
-// "1er Grado A" de 2027), incluso si el nombre se repite.
-model Seccion {
-  id           String     @id @default(cuid())
-  nombre       String // "A", "B", "C"
-  gradoId      String
-  anoLectivoId String
-  createdAt    DateTime   @default(now())
+// ─── Catálogo de Materias ─────────────────────────────────────────────────────
+// Una Materia existe UNA SOLA VEZ en el sistema, independientemente de en qué
+// grados se dicte. La relación Materia↔Grado se define en PlanEstudio.
+model Materia {
+  id        String   @id @default(cuid())
+  nombre    String   @unique
+  area      String?  // "Ciencias", "Humanidades", "Arte" — agrupación opcional
+  codigo    String?  @unique // "MAT", "COM" — útil para reportes y exportaciones
+  createdAt DateTime @default(now())
 
-  grado      Grado      @relation(fields: [gradoId], references: [id], onDelete: Cascade)
-  anoLectivo AnoLectivo @relation(fields: [anoLectivoId], references: [id], onDelete: Cascade)
-  alumnos    Alumno[]
-  clases     Clase[]
+  planEstudios PlanEstudio[]
+}
+
+// ─── Plan de Estudios ─────────────────────────────────────────────────────────
+// Entidad intermedia que asigna una Materia a un Grado con metadatos curriculares.
+// Reemplaza la relación directa Materia.gradoId del modelo anterior.
+// Un PlanEstudio es la "materia-en-ese-grado": Matemáticas en 3er Grado Primaria
+// es un PlanEstudio distinto de Matemáticas en 1er Grado Secundaria, aunque la
+// Materia subyacente sea la misma fila.
+model PlanEstudio {
+  id             String   @id @default(cuid())
+  gradoId        String
+  materiaId      String
+  horasSemanales Int      @default(0)
+  orden          Int      @default(0)   // posición en la grilla horaria del grado
+  obligatoria    Boolean  @default(true)
+  observaciones  String?
+  createdAt      DateTime @default(now())
+
+  grado   Grado   @relation(fields: [gradoId], references: [id], onDelete: Cascade)
+  materia Materia @relation(fields: [materiaId], references: [id], onDelete: Cascade)
+  clases  Clase[]
+
+  @@unique([gradoId, materiaId])
+  @@index([gradoId])
+  @@index([materiaId])
+}
+
+// ─── Sección ──────────────────────────────────────────────────────────────────
+model Seccion {
+  id              String   @id @default(cuid())
+  nombre          String   // "A", "B", "C"
+  gradoId         String
+  anoLectivoId    String
+  profesorTutorId String?
+  createdAt       DateTime @default(now())
+
+  grado         Grado      @relation(fields: [gradoId], references: [id], onDelete: Cascade)
+  anoLectivo    AnoLectivo @relation(fields: [anoLectivoId], references: [id], onDelete: Cascade)
+  profesorTutor Profesor?  @relation(fields: [profesorTutorId], references: [id], onDelete: SetNull)
+  alumnos       Alumno[]
+  clases        Clase[]
 
   @@unique([gradoId, anoLectivoId, nombre])
   @@index([anoLectivoId])
+  @@index([profesorTutorId])
 }
 
-// Materia específica de un grado (ej. "Matemáticas" en 3er Grado Primaria
-// es un registro distinto de "Matemáticas" en 1er Grado Secundaria)
-model Materia {
-  id        String   @id @default(cuid())
-  nombre    String
-  gradoId   String
-  createdAt DateTime @default(now())
+// ─── Clase ────────────────────────────────────────────────────────────────────
+// Clase = PlanEstudio + Sección + Profesor.
+// Referencia PlanEstudio (no Materia directamente) para heredar los metadatos
+// curriculares (horasSemanales, orden, obligatoria) del plan del grado.
+// Todos los alumnos de la Sección obtienen la Clase automáticamente.
+model Clase {
+  id            String   @id @default(cuid())
+  planEstudioId String
+  seccionId     String
+  profesorId    String
+  horario       String?
+  salon         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  grado     Grado             @relation(fields: [gradoId], references: [id], onDelete: Cascade)
-  profesores ProfesorMateria[]
-  clases    Clase[]
+  planEstudio PlanEstudio @relation(fields: [planEstudioId], references: [id], onDelete: Cascade)
+  seccion     Seccion     @relation(fields: [seccionId], references: [id], onDelete: Cascade)
+  profesor    Profesor    @relation(fields: [profesorId], references: [id], onDelete: Cascade)
+  tareas      Tarea[]
+  examenes    Examen[]
 
-  @@unique([gradoId, nombre])
+  @@unique([planEstudioId, seccionId])
+  @@index([seccionId])
+  @@index([profesorId])
 }
 
-// Un profesor puede dictar varias materias; una materia puede tener varios profesores
-model ProfesorMateria {
-  profesorId String
-  materiaId  String
-
-  profesor Profesor @relation(fields: [profesorId], references: [id], onDelete: Cascade)
-  materia  Materia  @relation(fields: [materiaId], references: [id], onDelete: Cascade)
-
-  @@id([profesorId, materiaId])
-}
-
+// ─── Alumnos ──────────────────────────────────────────────────────────────────
 enum EstadoAlumno {
   ACTIVO
   EGRESADO
@@ -164,10 +194,9 @@ model Alumno {
   dni        String       @unique
   seccionId  String?
   fechaNac   DateTime?
-  anoIngreso Int // año lectivo en que el alumno ingresó a su grado/ciclo actual; clave para el filtro por año en el dashboard
+  anoIngreso Int
   estado     EstadoAlumno @default(ACTIVO)
 
-  // Tutor / apoderado
   tutorDni      String?
   tutorNombre   String?
   tutorTelefono String?
@@ -176,8 +205,7 @@ model Alumno {
   updatedAt DateTime @updatedAt
 
   usuario          Usuario           @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  seccion          Seccion?          @relation(fields: [seccionId], references: [id])
-  clases           AlumnoClase[]
+  seccion          Seccion?          @relation(fields: [seccionId], references: [id], onDelete: SetNull)
   matricula        Matricula?
   entregas         Entrega[]
   respuestasExamen RespuestaExamen[]
@@ -187,46 +215,13 @@ model Alumno {
   @@index([estado])
 }
 
-model Clase {
-  id         String   @id @default(cuid())
-  materiaId  String
-  seccionId  String
-  profesorId String
-  horario    String
-  salon      String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  materia  Materia       @relation(fields: [materiaId], references: [id])
-  seccion  Seccion       @relation(fields: [seccionId], references: [id])
-  profesor Profesor      @relation(fields: [profesorId], references: [id])
-  alumnos  AlumnoClase[]
-  tareas   Tarea[]
-  examenes Examen[]
-
-  @@unique([materiaId, seccionId])
-  @@index([seccionId])
-  @@index([profesorId])
-}
-
-model AlumnoClase {
-  alumnoId String
-  claseId  String
-  alumno   Alumno @relation(fields: [alumnoId], references: [id], onDelete: Cascade)
-  clase    Clase  @relation(fields: [claseId], references: [id], onDelete: Cascade)
-
-  @@id([alumnoId, claseId])
-}
-
+// ─── Tareas ───────────────────────────────────────────────────────────────────
 enum EstadoTarea {
   BORRADOR
   PUBLICADA
   CERRADA
 }
 
-// El profesor sube su tarea como archivo (PDF) o la describe en texto.
-// archivoUrl/archivoNombre apuntan a Vercel Blob Storage — la base de datos
-// solo guarda la URL (texto corto), no el binario, para mantenerla liviana.
 model Tarea {
   id            String      @id @default(cuid())
   titulo        String
@@ -241,8 +236,8 @@ model Tarea {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  profesor Profesor  @relation(fields: [profesorId], references: [id])
-  clase    Clase     @relation(fields: [claseId], references: [id])
+  profesor Profesor  @relation(fields: [profesorId], references: [id], onDelete: Cascade)
+  clase    Clase     @relation(fields: [claseId], references: [id], onDelete: Cascade)
   entregas Entrega[]
 
   @@index([claseId])
@@ -257,7 +252,6 @@ enum EstadoEntrega {
   FUERA_DE_PLAZO
 }
 
-// El alumno entrega su respuesta como archivo (PDF) en Vercel Blob.
 model Entrega {
   id            String        @id @default(cuid())
   tareaId       String
@@ -271,14 +265,13 @@ model Entrega {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  tarea  Tarea  @relation(fields: [tareaId], references: [id])
-  alumno Alumno @relation(fields: [alumnoId], references: [id])
+  tarea  Tarea  @relation(fields: [tareaId], references: [id], onDelete: Cascade)
+  alumno Alumno @relation(fields: [alumnoId], references: [id], onDelete: Cascade)
 
   @@unique([tareaId, alumnoId])
 }
 
-// El profesor sube el examen como archivo (PDF) o lo describe en texto.
-// El alumno sube su respuesta también como archivo (PDF), calificada manualmente.
+// ─── Exámenes ─────────────────────────────────────────────────────────────────
 model Examen {
   id            String   @id @default(cuid())
   titulo        String
@@ -294,8 +287,8 @@ model Examen {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  profesor   Profesor          @relation(fields: [profesorId], references: [id])
-  clase      Clase             @relation(fields: [claseId], references: [id])
+  profesor   Profesor          @relation(fields: [profesorId], references: [id], onDelete: Cascade)
+  clase      Clase             @relation(fields: [claseId], references: [id], onDelete: Cascade)
   respuestas RespuestaExamen[]
 
   @@index([claseId])
@@ -310,24 +303,25 @@ enum EstadoRespuestaExamen {
 }
 
 model RespuestaExamen {
-  id            String                 @id @default(cuid())
+  id            String                @id @default(cuid())
   examenId      String
   alumnoId      String
-  estado        EstadoRespuestaExamen  @default(PENDIENTE)
+  estado        EstadoRespuestaExamen @default(PENDIENTE)
   archivoUrl    String?
   archivoNombre String?
   nota          Float?
   comentario    String?
   fechaEntrega  DateTime?
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
 
-  examen Examen @relation(fields: [examenId], references: [id])
-  alumno Alumno @relation(fields: [alumnoId], references: [id])
+  examen Examen @relation(fields: [examenId], references: [id], onDelete: Cascade)
+  alumno Alumno @relation(fields: [alumnoId], references: [id], onDelete: Cascade)
 
   @@unique([examenId, alumnoId])
 }
 
+// ─── Matrículas ───────────────────────────────────────────────────────────────
 enum EstadoMatricula {
   PENDIENTE
   PAGADO

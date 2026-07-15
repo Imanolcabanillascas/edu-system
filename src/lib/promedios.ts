@@ -2,15 +2,6 @@ import { prisma } from "@/lib/prisma";
 
 const CRITERIO_DEFAULT = { pesoTareas: 40, pesoExamenes: 60, notaAprobatoria: 10.5 };
 
-/**
- * Calcula el promedio anual de un alumno: primero el promedio por materia
- * (ponderando tareas y exámenes según el criterio de su Nivel), y luego el
- * promedio simple entre todas sus materias. Solo se consideran las notas ya
- * calificadas (nota != null); las tareas/exámenes sin calificar no afectan el promedio.
- *
- * Devuelve también el detalle por materia, útil tanto para la vista del
- * alumno como para la pantalla de revisión de promoción del Admin.
- */
 export async function calcularPromedioAlumno(alumnoId: string) {
   const alumno = await prisma.alumno.findUnique({
     where: { id: alumnoId },
@@ -25,22 +16,17 @@ export async function calcularPromedioAlumno(alumnoId: string) {
     ? { pesoTareas: criterio.pesoTareas, pesoExamenes: criterio.pesoExamenes, notaAprobatoria: criterio.notaAprobatoria }
     : CRITERIO_DEFAULT;
 
-  // Todas las clases en las que el alumno está matriculado (su materia/profesor actual)
-  const clases = await prisma.alumnoClase.findMany({
-    where: { alumnoId },
+  const clases = await prisma.clase.findMany({
+    where: { seccionId: alumno.seccionId },
     select: {
-      clase: {
-        select: {
-          id: true,
-          materia: { select: { nombre: true } },
-          tareas: { select: { entregas: { where: { alumnoId }, select: { nota: true } } } },
-          examenes: { select: { respuestas: { where: { alumnoId }, select: { nota: true } } } },
-        },
-      },
+      id: true,
+      planEstudio: { select: { materia: { select: { nombre: true } } } },
+      tareas: { select: { entregas: { where: { alumnoId }, select: { nota: true } } } },
+      examenes: { select: { respuestas: { where: { alumnoId }, select: { nota: true } } } },
     },
   });
 
-  const materias = clases.map(({ clase }) => {
+  const materias = clases.map((clase) => {
     const notasTareas = clase.tareas.flatMap((t) => t.entregas.map((e) => e.nota)).filter((n): n is number => n != null);
     const notasExamenes = clase.examenes.flatMap((e) => e.respuestas.map((r) => r.nota)).filter((n): n is number => n != null);
 
@@ -51,14 +37,14 @@ export async function calcularPromedioAlumno(alumnoId: string) {
     if (promTareas != null && promExamenes != null) {
       notaFinal = (promTareas * pesos.pesoTareas + promExamenes * pesos.pesoExamenes) / 100;
     } else if (promTareas != null) {
-      notaFinal = promTareas; // solo hay tareas calificadas todavía
+      notaFinal = promTareas;
     } else if (promExamenes != null) {
-      notaFinal = promExamenes; // solo hay exámenes calificados todavía
+      notaFinal = promExamenes;
     }
 
     return {
       claseId: clase.id,
-      materia: clase.materia.nombre,
+      materia: clase.planEstudio.materia.nombre,
       promedioTareas: promTareas !== null ? Math.round(promTareas * 100) / 100 : null,
       promedioExamenes: promExamenes !== null ? Math.round(promExamenes * 100) / 100 : null,
       notaFinal: notaFinal !== null ? Math.round(notaFinal * 100) / 100 : null,

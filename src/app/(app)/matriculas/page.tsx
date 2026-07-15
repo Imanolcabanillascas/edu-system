@@ -5,6 +5,7 @@ import { IconCard, IconSearch, IconPlus, IconTrash, IconLoader, IconAlert, IconI
 
 export default function MatriculasPage() {
   const [matriculas, setMatriculas] = useState<any[]>([]);
+  const [anos, setAnos] = useState<any[]>([]);
   const [rol, setRol] = useState("ALUMNO");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -23,10 +24,11 @@ export default function MatriculasPage() {
 
   const load = async () => {
     setLoading(true);
-    const [resM, resU] = await Promise.all([fetch("/api/matriculas"), fetch("/api/usuarios/me")]);
+    const [resM, resU, resAnos] = await Promise.all([fetch("/api/matriculas"), fetch("/api/usuarios/me"), fetch("/api/anos-lectivos")]);
     setMatriculas(await resM.json());
     const usuario = await resU.json();
     setRol(usuario?.rol ?? "ALUMNO");
+    setAnos(await resAnos.json());
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
@@ -41,7 +43,8 @@ export default function MatriculasPage() {
 
   const openNew = () => {
     setDniBuscado(""); setAlumnoEncontrado(null); setBusquedaError("");
-    setForm({ anoLectivo: "2025-2026", monto: "", fechaVencimiento: "", observaciones: "", marcarPagada: false, medioPago: "EFECTIVO" });
+    const anoActivo = anos.find((a: any) => a.activo);
+    setForm({ anoLectivoId: anoActivo?.id ?? "", monto: "", fechaVencimiento: "", observaciones: "", marcarPagada: false, medioPago: "EFECTIVO" });
     setModal("new");
   };
   const close = () => setModal(null);
@@ -57,7 +60,7 @@ export default function MatriculasPage() {
   };
 
   const save = async () => {
-    if (!alumnoEncontrado || !form.monto || !form.fechaVencimiento) return;
+    if (!alumnoEncontrado || !form.anoLectivoId || !form.monto || !form.fechaVencimiento) return;
     setSaving(true);
     await fetch("/api/matriculas", { method: "POST", body: JSON.stringify({ ...form, alumnoId: alumnoEncontrado.id }) });
     setSaving(false);
@@ -121,7 +124,7 @@ export default function MatriculasPage() {
                   {m.alumno.usuario.nombre}
                 </td>
                 <td style={{ color: "var(--muted)", fontFamily: "monospace" }}>{m.alumno.dni}</td>
-                <td style={{ color: "var(--muted)" }}>{m.anoLectivo}</td>
+                <td style={{ color: "var(--muted)" }}>{m.anoLectivo?.anio}</td>
                 <td style={{ color: "var(--muted)" }}>S/ {m.monto.toFixed(2)}</td>
                 <td style={{ color: "var(--muted)" }}>{formatDate(m.fechaVencimiento)}</td>
                 <td style={{ color: "var(--muted)" }}>{m.medioPago ? MEDIOS_PAGO.find((mp) => mp.value === m.medioPago)?.label : "—"}</td>
@@ -165,6 +168,7 @@ export default function MatriculasPage() {
                   <div className="muted-label">
                     DNI {alumnoEncontrado.dni}
                     {alumnoEncontrado.seccion && <> · {alumnoEncontrado.seccion.grado.nombre} "{alumnoEncontrado.seccion.nombre}"</>}
+                    {alumnoEncontrado.anoIngreso && <> · Ingreso {alumnoEncontrado.anoIngreso}</>}
                   </div>
                 </div>
               </div>
@@ -174,7 +178,10 @@ export default function MatriculasPage() {
               <>
                 <div className="form-row">
                   <div className="form-group"><label>Año lectivo</label>
-                    <input value={form.anoLectivo || ""} onChange={(e) => setForm({ ...form, anoLectivo: e.target.value })} placeholder="2025-2026" /></div>
+                    <select value={form.anoLectivoId || ""} onChange={(e) => setForm({ ...form, anoLectivoId: e.target.value })}>
+                      <option value="">Seleccionar…</option>
+                      {anos.map((a: any) => <option key={a.id} value={a.id}>{a.anio}{a.activo ? " (activo)" : ""}</option>)}
+                    </select></div>
                   <div className="form-group"><label>Monto (S/)</label>
                     <input type="number" value={form.monto || ""} onChange={(e) => setForm({ ...form, monto: e.target.value })} placeholder="350.00" /></div>
                 </div>

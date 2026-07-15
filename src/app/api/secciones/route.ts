@@ -14,9 +14,10 @@ export async function GET(req: Request) {
     where: anoLectivoId ? { anoLectivoId } : undefined,
     orderBy: { createdAt: "desc" },
     select: {
-      id: true, nombre: true, gradoId: true, anoLectivoId: true,
+      id: true, nombre: true, gradoId: true, anoLectivoId: true, profesorTutorId: true,
       anoLectivo: { select: { anio: true } },
       grado: { select: { nombre: true, nivel: true } },
+      profesorTutor: { select: { id: true, usuario: { select: { nombre: true } } } },
       alumnos: { select: { id: true } },
     },
   });

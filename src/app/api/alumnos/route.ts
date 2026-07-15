@@ -34,7 +34,6 @@ export async function GET(req: Request) {
     tutorDni: true, tutorNombre: true, tutorTelefono: true,
     usuario: { select: { id: true, nombre: true, email: true } },
     matricula: { select: { estado: true } },
-    clases: { select: { claseId: true } },
     seccion: { select: { id: true, nombre: true, gradoId: true, grado: { select: { nombre: true, nivel: true } } } },
   };
 

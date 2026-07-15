@@ -8,7 +8,7 @@ const claseSelect = {
     id: true,
     horario: true,
     salon: true,
-    materia: { select: { nombre: true } },
+    planEstudio: { select: { materia: { select: { nombre: true } } } },
     seccion: { select: { nombre: true, grado: { select: { nombre: true } } } },
   },
 };
@@ -19,7 +19,7 @@ export async function GET() {
 
   const usuario = await prisma.usuario.findUnique({
     where: { id: (session.user as any).id },
-    select: { rol: true, profesor: { select: { id: true } }, alumno: { select: { id: true } } },
+    select: { rol: true, profesor: { select: { id: true } }, alumno: { select: { id: true, seccionId: true } } },
   });
   if (!usuario) return NextResponse.json([]);
 
@@ -40,11 +40,10 @@ export async function GET() {
       },
       orderBy: { fechaLimite: "asc" },
     });
-  } else if (usuario.rol === "ALUMNO" && usuario.alumno) {
-    const clases = await prisma.alumnoClase.findMany({ where: { alumnoId: usuario.alumno.id }, select: { claseId: true } });
-    const claseIds = clases.map((c) => c.claseId);
+  } else if (usuario.rol === "ALUMNO" && usuario.alumno?.seccionId) {
+    // El alumno obtiene sus exámenes via las clases de su sección, sin AlumnoClase
     examenes = await prisma.examen.findMany({
-      where: { claseId: { in: claseIds } },
+      where: { clase: { seccionId: usuario.alumno.seccionId } },
       select: {
         id: true, titulo: true, descripcion: true, archivoUrl: true, archivoNombre: true,
         fechaInicio: true, fechaLimite: true, duracion: true, salon: true,

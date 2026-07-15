@@ -229,6 +229,15 @@ export default function AcademicoPage() {
                       </span>
                     ))}
                   </div>
+                  {g.secciones.some((s: any) => s.profesorTutor) && (
+                    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 3 }}>
+                      {g.secciones.filter((s: any) => s.profesorTutor).map((s: any) => (
+                        <div key={s.id} className="form-hint" style={{ marginBottom: 0 }}>
+                          Tutor "{s.nombre}": {s.profesorTutor.usuario.nombre}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => abrirNuevaSeccion(g.id)}>
                     <IconPlus size={13} /> Agregar sección
                   </button>

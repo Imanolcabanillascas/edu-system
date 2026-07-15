@@ -8,24 +8,37 @@ export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-  // Auto-actualizar vencidas según la hora actual de Perú
   await prisma.matricula.updateMany({
     where: { estado: "PENDIENTE", fechaVencimiento: { lt: nowPeru() } },
     data: { estado: "VENCIDO" },
   });
 
-  const usuario = await prisma.usuario.findUnique({ where: { id: (session.user as any).id }, include: { alumno: true } });
+  const usuario = await prisma.usuario.findUnique({
+    where: { id: (session.user as any).id },
+    select: { rol: true, alumno: { select: { id: true } } },
+  });
   if (!usuario) return NextResponse.json([]);
+
+  const alumnoSelect = { select: { dni: true, usuario: { select: { nombre: true } } } };
+  const anoLectivoSelect = { select: { anio: true } };
 
   let matriculas;
   if (usuario.rol === "ALUMNO" && usuario.alumno) {
     matriculas = await prisma.matricula.findMany({
       where: { alumnoId: usuario.alumno.id },
-      include: { alumno: { include: { usuario: true } } },
+      select: {
+        id: true, monto: true, fechaVencimiento: true, fechaPago: true,
+        medioPago: true, estado: true, observaciones: true,
+        alumno: alumnoSelect, anoLectivo: anoLectivoSelect,
+      },
     });
   } else {
     matriculas = await prisma.matricula.findMany({
-      include: { alumno: { include: { usuario: true } } },
+      select: {
+        id: true, monto: true, fechaVencimiento: true, fechaPago: true,
+        medioPago: true, estado: true, observaciones: true,
+        alumno: alumnoSelect, anoLectivo: anoLectivoSelect,
+      },
       orderBy: { fechaVencimiento: "asc" },
     });
   }
@@ -39,23 +52,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
   }
 
-  const { alumnoId, anoLectivo, monto, fechaVencimiento, observaciones, medioPago, marcarPagada } = await req.json();
+  const { alumnoId, anoLectivoId, monto, fechaVencimiento, observaciones, medioPago, marcarPagada } = await req.json();
+  if (!alumnoId || !anoLectivoId || !monto || !fechaVencimiento) {
+    return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
+  }
 
   const matricula = await prisma.matricula.upsert({
     where: { alumnoId },
     update: {
-      anoLectivo, monto: Number(monto), fechaVencimiento: new Date(fechaVencimiento), observaciones,
+      anoLectivoId, monto: Number(monto), fechaVencimiento: new Date(fechaVencimiento), observaciones,
       estado: marcarPagada ? "PAGADO" : "PENDIENTE",
       medioPago: marcarPagada ? medioPago : null,
       fechaPago: marcarPagada ? nowPeru() : null,
     },
     create: {
-      alumnoId, anoLectivo, monto: Number(monto), fechaVencimiento: new Date(fechaVencimiento), observaciones,
+      alumnoId, anoLectivoId, monto: Number(monto), fechaVencimiento: new Date(fechaVencimiento), observaciones,
       estado: marcarPagada ? "PAGADO" : "PENDIENTE",
       medioPago: marcarPagada ? medioPago : null,
       fechaPago: marcarPagada ? nowPeru() : null,
     },
-    include: { alumno: { include: { usuario: true } } },
+    select: {
+      id: true, monto: true, estado: true,
+      alumno: { select: { dni: true, usuario: { select: { nombre: true } } } },
+      anoLectivo: { select: { anio: true } },
+    },
   });
   return NextResponse.json(matricula, { status: 201 });
 }
@@ -76,7 +96,11 @@ export async function PATCH(req: Request) {
       fechaPago: estado === "PAGADO" ? nowPeru() : null,
       observaciones,
     },
-    include: { alumno: { include: { usuario: true } } },
+    select: {
+      id: true, monto: true, estado: true,
+      alumno: { select: { dni: true, usuario: { select: { nombre: true } } } },
+      anoLectivo: { select: { anio: true } },
+    },
   });
   return NextResponse.json(matricula);
 }
