@@ -30,6 +30,8 @@ model Profesor {
   usuarioId String   @unique
   dni       String   @unique
   telefono  String?
+  foto          String?
+  especialidad  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -200,7 +202,7 @@ model Alumno {
   tutorDni      String?
   tutorNombre   String?
   tutorTelefono String?
-
+  foto          String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -272,6 +274,10 @@ model Entrega {
 }
 
 // ─── Exámenes ─────────────────────────────────────────────────────────────────
+enum TipoExamen {
+  ARCHIVO     // PDF adjunto — el alumno sube su respuesta escaneada
+  SELECCION   // Selección múltiple — corrección automática
+}
 model Examen {
   id            String   @id @default(cuid())
   titulo        String
@@ -282,6 +288,7 @@ model Examen {
   fechaLimite   DateTime
   duracion      Int
   salon         String?
+  tipo       TipoExamen @default(ARCHIVO)
   profesorId    String
   claseId       String
   createdAt     DateTime @default(now())
@@ -290,11 +297,53 @@ model Examen {
   profesor   Profesor          @relation(fields: [profesorId], references: [id], onDelete: Cascade)
   clase      Clase             @relation(fields: [claseId], references: [id], onDelete: Cascade)
   respuestas RespuestaExamen[]
-
+  preguntas  Pregunta[]
   @@index([claseId])
   @@index([profesorId])
 }
+model Pregunta {
+  id       String @id @default(cuid())
+  examenId String
+  texto    String
+  orden    Int    @default(0)  // orden original del profesor
+  puntaje  Float  @default(1)  // peso de esta pregunta en la nota final
 
+  examen  Examen          @relation(fields: [examenId], references: [id], onDelete: Cascade)
+  opciones OpcionPregunta[]
+  respuestas RespuestaPregunta[]
+
+  @@index([examenId])
+}
+
+// Opciones de una pregunta. Solo una puede ser `correcta = true`.
+model OpcionPregunta {
+  id          String  @id @default(cuid())
+  preguntaId  String
+  texto       String
+  correcta    Boolean @default(false)
+  orden       Int     @default(0)  // orden original; se aleatoriza en frontend
+
+  pregunta   Pregunta            @relation(fields: [preguntaId], references: [id], onDelete: Cascade)
+  respuestas RespuestaPregunta[]
+
+  @@index([preguntaId])
+}
+
+// Respuesta de un alumno a una pregunta específica.
+// Se crea cuando el alumno envía el examen.
+model RespuestaPregunta {
+  id          String @id @default(cuid())
+  respuestaExamenId String
+  preguntaId  String
+  opcionId    String  // la opción que eligió el alumno
+
+  respuestaExamen RespuestaExamen @relation(fields: [respuestaExamenId], references: [id], onDelete: Cascade)
+  pregunta    Pregunta        @relation(fields: [preguntaId], references: [id], onDelete: Cascade)
+  opcion      OpcionPregunta  @relation(fields: [opcionId], references: [id], onDelete: Cascade)
+
+  @@unique([respuestaExamenId, preguntaId])
+  @@index([respuestaExamenId])
+}
 enum EstadoRespuestaExamen {
   PENDIENTE
   ENTREGADO
@@ -314,7 +363,7 @@ model RespuestaExamen {
   fechaEntrega  DateTime?
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
-
+  respuestasPreguntas RespuestaPregunta[]
   examen Examen @relation(fields: [examenId], references: [id], onDelete: Cascade)
   alumno Alumno @relation(fields: [alumnoId], references: [id], onDelete: Cascade)
 
