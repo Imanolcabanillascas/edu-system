@@ -1,16 +1,15 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
-import { initials, avatarColor, NIVEL_LABEL, estadoColor, formatDate } from "@/lib/utils";
+import { initials, avatarColor, NIVEL_LABEL, estadoColor } from "@/lib/utils";
 import {
-  IconStudent, IconSearch, IconPlus, IconEdit, IconTrash, IconLoader,
-  IconPhone, IconIdCard, IconLogout, IconCheck, IconAlert,
+  IconStudent, IconSearch, IconPlus, IconEdit, IconTrash, IconLoader, IconLogout,
 } from "@/components/icons";
-import ImageUpload from "@/components/ImageUpload";
 
 const ANO_ACTUAL = new Date().getFullYear();
+const ESTADOS = ["ACTIVO", "EGRESADO", "RETIRADO"] as const;
 
 interface AlumnoRow {
-  id: string; dni: string; foto: string | null;
+  id: string; dni: string;
   fechaNac: string | null; anoIngreso: number;
   estado: "ACTIVO" | "EGRESADO" | "RETIRADO";
   tutorDni: string | null; tutorNombre: string | null; tutorTelefono: string | null;
@@ -18,8 +17,6 @@ interface AlumnoRow {
   matricula: { estado: string } | null;
   seccion: { id: string; nombre: string; gradoId: string; grado: { nombre: string; nivel: any } } | null;
 }
-
-const ESTADOS = ["ACTIVO", "EGRESADO", "RETIRADO"] as const;
 
 export default function AlumnosPage() {
   const [alumnos, setAlumnos] = useState<AlumnoRow[]>([]);
@@ -30,7 +27,6 @@ export default function AlumnosPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
-
   const [modal, setModal] = useState<null | "new" | AlumnoRow>(null);
   const [form, setForm] = useState<any>({});
   const [nivelSel, setNivelSel] = useState("");
@@ -59,15 +55,14 @@ export default function AlumnosPage() {
 
   useEffect(() => { loadAlumnos(1); loadNiveles(); }, [filtroEstado]);
 
-  // Cascada nivel → grado → secciones
   const nivelObj = niveles.find((n: any) => n.tipo === nivelSel);
   const gradosDisponibles = nivelObj?.grados ?? [];
   const gradoObj = gradosDisponibles.find((g: any) => g.id === gradoSel);
   const seccionesDisponibles = gradoObj?.secciones ?? [];
 
   const openNew = () => {
-    setForm({ nombre: "", email: "", dni: "", fechaNac: "", anoIngreso: ANO_ACTUAL, estado: "ACTIVO",
-      tutorNombre: "", tutorDni: "", tutorTelefono: "", password: "", seccionId: "", foto: null });
+    setForm({ nombre: "", email: "", dni: "", fechaNac: "", anoIngreso: ANO_ACTUAL,
+      estado: "ACTIVO", tutorNombre: "", tutorDni: "", tutorTelefono: "", password: "", seccionId: "" });
     setNivelSel(""); setGradoSel(""); setCambiarPassword(true); setError(""); setModal("new");
   };
 
@@ -77,15 +72,10 @@ export default function AlumnosPage() {
       fechaNac: a.fechaNac ? a.fechaNac.slice(0, 10) : "",
       anoIngreso: a.anoIngreso, estado: a.estado,
       tutorNombre: a.tutorNombre ?? "", tutorDni: a.tutorDni ?? "",
-      tutorTelefono: a.tutorTelefono ?? "",
-      seccionId: a.seccion?.id ?? "", password: "", foto: a.foto ?? null,
+      tutorTelefono: a.tutorTelefono ?? "", seccionId: a.seccion?.id ?? "", password: "",
     });
-    if (a.seccion) {
-      setNivelSel(a.seccion.grado.nivel.tipo);
-      setGradoSel(a.seccion.gradoId ?? "");
-    } else {
-      setNivelSel(""); setGradoSel("");
-    }
+    if (a.seccion) { setNivelSel(a.seccion.grado.nivel.tipo); setGradoSel(a.seccion.gradoId ?? ""); }
+    else { setNivelSel(""); setGradoSel(""); }
     setCambiarPassword(false); setError(""); setModal(a);
   };
 
@@ -94,13 +84,14 @@ export default function AlumnosPage() {
   const save = async () => {
     if (!form.nombre?.trim() || !form.dni || !form.email) { setError("Nombre, DNI y email son obligatorios"); return; }
     if (form.dni.length !== 8) { setError("El DNI debe tener 8 dígitos"); return; }
-    if (cambiarPassword && modal === "new" && (!form.password || form.password.length < 6)) {
+    if (modal === "new" && (!form.password || form.password.length < 6)) {
       setError("La contraseña debe tener al menos 6 caracteres"); return;
     }
     setSaving(true); setError("");
-    const method = modal === "new" ? "POST" : "PUT";
-    const payload = { ...form, password: cambiarPassword ? form.password : undefined };
-    const res = await fetch("/api/alumnos", { method, body: JSON.stringify(payload) });
+    const res = await fetch("/api/alumnos", {
+      method: modal === "new" ? "POST" : "PUT",
+      body: JSON.stringify({ ...form, password: cambiarPassword ? form.password : undefined }),
+    });
     if (!res.ok) { setError((await res.json()).error ?? "Error al guardar"); setSaving(false); return; }
     setSaving(false); close(); loadAlumnos(page);
   };
@@ -112,7 +103,7 @@ export default function AlumnosPage() {
   };
 
   const remove = async (id: string) => {
-    if (!confirm("¿Eliminar este alumno permanentemente? Esta acción no se puede deshacer.")) return;
+    if (!confirm("¿Eliminar este alumno permanentemente?")) return;
     await fetch("/api/alumnos", { method: "DELETE", body: JSON.stringify({ id }) });
     loadAlumnos(page);
   };
@@ -126,7 +117,6 @@ export default function AlumnosPage() {
         <p>Gestiona el padrón de alumnos del colegio</p>
       </div>
 
-      {/* Toolbar */}
       <form className="toolbar" onSubmit={handleSearch}>
         <div className="search-wrap">
           <IconSearch size={16} className="search-icon" />
@@ -142,36 +132,25 @@ export default function AlumnosPage() {
         </button>
       </form>
 
-      <div className="muted-label" style={{ marginBottom: 12 }}>
-        {total} alumno(s) encontrado(s)
-      </div>
+      <div className="muted-label" style={{ marginBottom: 12 }}>{total} alumno(s) encontrado(s)</div>
 
-      {/* Tabla */}
       <div className="table-wrap">
         <table>
           <thead>
-            <tr>
-              <th>Alumno</th><th>DNI</th><th>Sección</th>
-              <th>Matrícula</th><th>Estado</th><th>Acciones</th>
-            </tr>
+            <tr><th>Alumno</th><th>DNI</th><th>Sección</th><th>Matrícula</th><th>Estado</th><th>Acciones</th></tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={6}><div className="empty"><IconLoader size={24} /></div></td></tr>}
             {!loading && alumnos.length === 0 && (
-              <tr><td colSpan={6}><div className="empty"><IconStudent size={32} style={{ color: "var(--muted)" }} />
-                <p>No se encontraron alumnos</p></div></td></tr>
+              <tr><td colSpan={6}><div className="empty"><IconStudent size={32} style={{ color: "var(--muted)" }} /><p>No se encontraron alumnos</p></div></td></tr>
             )}
             {alumnos.map((a) => (
               <tr key={a.id}>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    {a.foto ? (
-                      <img src={a.foto} alt="" style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
-                    ) : (
-                      <div className="avatar" style={{ width: 36, height: 36, fontSize: ".75rem", background: avatarColor(a.usuario.nombre) + "33", color: avatarColor(a.usuario.nombre) }}>
-                        {initials(a.usuario.nombre)}
-                      </div>
-                    )}
+                    <div className="avatar" style={{ background: avatarColor(a.usuario.nombre) + "33", color: avatarColor(a.usuario.nombre) }}>
+                      {initials(a.usuario.nombre)}
+                    </div>
                     <div>
                       <div style={{ fontWeight: 500 }}>{a.usuario.nombre}</div>
                       <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>{a.usuario.email}</div>
@@ -183,16 +162,12 @@ export default function AlumnosPage() {
                   {a.seccion ? `${a.seccion.grado.nombre} "${a.seccion.nombre}"` : "—"}
                 </td>
                 <td>
-                  {a.matricula ? (
-                    <span className="badge" style={{ background: estadoColor(a.matricula.estado) + "22", color: estadoColor(a.matricula.estado) }}>
-                      {a.matricula.estado}
-                    </span>
-                  ) : <span style={{ color: "var(--muted)" }}>—</span>}
+                  {a.matricula
+                    ? <span className="badge" style={{ background: estadoColor(a.matricula.estado) + "22", color: estadoColor(a.matricula.estado) }}>{a.matricula.estado}</span>
+                    : <span style={{ color: "var(--muted)" }}>—</span>}
                 </td>
                 <td>
-                  <span className="badge" style={{ background: estadoColor(a.estado) + "22", color: estadoColor(a.estado) }}>
-                    {a.estado}
-                  </span>
+                  <span className="badge" style={{ background: estadoColor(a.estado) + "22", color: estadoColor(a.estado) }}>{a.estado}</span>
                 </td>
                 <td>
                   <div style={{ display: "flex", gap: 4 }}>
@@ -209,7 +184,6 @@ export default function AlumnosPage() {
         </table>
       </div>
 
-      {/* Paginación */}
       {totalPages > 1 && (
         <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 16 }}>
           <button className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => loadAlumnos(page - 1)}>Anterior</button>
@@ -218,34 +192,24 @@ export default function AlumnosPage() {
         </div>
       )}
 
-      {/* Modal crear/editar */}
       {modal && (
         <div className="overlay" onClick={(e) => e.target === e.currentTarget && close()}>
-          <div className="modal" style={{ maxWidth: 600, maxHeight: "92vh", overflowY: "auto" }}>
+          <div className="modal" style={{ maxWidth: 580, maxHeight: "92vh", overflowY: "auto" }}>
             <h2><IconStudent size={20} /> {modal === "new" ? "Nuevo alumno" : "Editar alumno"}</h2>
             {error && <div className="alert-error">{error}</div>}
 
-            {/* Foto */}
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
-              <ImageUpload fotoUrl={form.foto} nombre={form.nombre}
-                onChange={(url) => setForm({ ...form, foto: url })} size={100} />
-            </div>
-
-            {/* Sección: Datos personales */}
             <div className="form-section-title">Datos personales</div>
             <div className="form-group"><label>Nombre completo <span style={{ color: "var(--danger)" }}>*</span></label>
               <input value={form.nombre || ""} onChange={(e) => setForm({ ...form, nombre: e.target.value })} placeholder="Ej: Juan Pérez López" /></div>
             <div className="form-row">
               <div className="form-group"><label>DNI <span style={{ color: "var(--danger)" }}>*</span></label>
-                <input value={form.dni || ""} maxLength={8}
-                  onChange={(e) => setForm({ ...form, dni: e.target.value.replace(/\D/g, "") })} placeholder="8 dígitos" /></div>
+                <input value={form.dni || ""} maxLength={8} onChange={(e) => setForm({ ...form, dni: e.target.value.replace(/\D/g, "") })} placeholder="8 dígitos" /></div>
               <div className="form-group"><label>Fecha de nacimiento</label>
                 <input type="date" value={form.fechaNac || ""} onChange={(e) => setForm({ ...form, fechaNac: e.target.value })} /></div>
             </div>
-            <div className="form-group"><label>Email (acceso al sistema) <span style={{ color: "var(--danger)" }}>*</span></label>
+            <div className="form-group"><label>Email <span style={{ color: "var(--danger)" }}>*</span></label>
               <input type="email" value={form.email || ""} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="alumno@colegio.edu" /></div>
 
-            {/* Sección: Información académica */}
             <div className="form-section-title" style={{ marginTop: 20 }}>Información académica</div>
             <div className="form-row">
               <div className="form-group"><label>Año de ingreso</label>
@@ -263,15 +227,13 @@ export default function AlumnosPage() {
                   {niveles.map((n: any) => <option key={n.id} value={n.tipo}>{NIVEL_LABEL[n.tipo]}</option>)}
                 </select></div>
               <div className="form-group"><label>Grado</label>
-                <select value={gradoSel} disabled={!nivelSel}
-                  onChange={(e) => { setGradoSel(e.target.value); setForm({ ...form, seccionId: "" }); }}>
+                <select value={gradoSel} disabled={!nivelSel} onChange={(e) => { setGradoSel(e.target.value); setForm({ ...form, seccionId: "" }); }}>
                   <option value="">Seleccionar…</option>
                   {gradosDisponibles.map((g: any) => <option key={g.id} value={g.id}>{g.nombre}</option>)}
                 </select></div>
             </div>
             <div className="form-group"><label>Sección</label>
-              <select value={form.seccionId || ""} disabled={!gradoSel}
-                onChange={(e) => setForm({ ...form, seccionId: e.target.value })}>
+              <select value={form.seccionId || ""} disabled={!gradoSel} onChange={(e) => setForm({ ...form, seccionId: e.target.value })}>
                 <option value="">Seleccionar…</option>
                 {seccionesDisponibles.map((s: any) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
               </select>
@@ -279,25 +241,19 @@ export default function AlumnosPage() {
                 <div className="form-hint">No hay secciones en el año activo — créalas en "Estructura Académica"</div>
               )}</div>
 
-            {/* Sección: Apoderado */}
-            <div className="form-section-title" style={{ marginTop: 20 }}>Información del apoderado</div>
+            <div className="form-section-title" style={{ marginTop: 20 }}>Apoderado</div>
             <div className="form-group"><label>Nombre del apoderado</label>
               <input value={form.tutorNombre || ""} onChange={(e) => setForm({ ...form, tutorNombre: e.target.value })} placeholder="Ej: María López" /></div>
             <div className="form-row">
               <div className="form-group"><label>DNI del apoderado</label>
-                <input value={form.tutorDni || ""} maxLength={8}
-                  onChange={(e) => setForm({ ...form, tutorDni: e.target.value.replace(/\D/g, "") })} placeholder="8 dígitos" /></div>
+                <input value={form.tutorDni || ""} maxLength={8} onChange={(e) => setForm({ ...form, tutorDni: e.target.value.replace(/\D/g, "") })} placeholder="8 dígitos" /></div>
               <div className="form-group"><label>Teléfono</label>
-                <input value={form.tutorTelefono || ""} maxLength={9}
-                  onChange={(e) => setForm({ ...form, tutorTelefono: e.target.value.replace(/\D/g, "") })} placeholder="9 dígitos" /></div>
+                <input value={form.tutorTelefono || ""} maxLength={9} onChange={(e) => setForm({ ...form, tutorTelefono: e.target.value.replace(/\D/g, "") })} placeholder="9 dígitos" /></div>
             </div>
 
-            {/* Sección: Acceso */}
             <div className="form-section-title" style={{ marginTop: 20 }}>Acceso al sistema</div>
             {modal !== "new" && !cambiarPassword && (
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCambiarPassword(true)}>
-                Cambiar contraseña
-              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCambiarPassword(true)}>Cambiar contraseña</button>
             )}
             {(modal === "new" || cambiarPassword) && (
               <div className="form-group">
