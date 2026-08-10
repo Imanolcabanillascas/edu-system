@@ -51,8 +51,7 @@ a { color: inherit; }
 /* ── Stat cards ───────────────────────────────────────────────────────────── */
 .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
   box-shadow: 0 1px 4px rgba(0,0,0,.04), 0 4px 12px rgba(0,0,0,.03);
-  padding: 22px 24px; display: flex; align-items: center; gap: 16px;
-  transition: all .2s; cursor: default; }
+  padding: 22px 24px; display: flex; align-items: center; gap: 16px; transition: all .2s; }
 .stat-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,.09); transform: translateY(-2px); }
 .stat-card-icon { width: 48px; height: 48px; border-radius: 12px;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -75,15 +74,37 @@ a { color: inherit; }
 
 /* ── Tabla ────────────────────────────────────────────────────────────────── */
 .table-wrap { background: var(--surface); border: 1px solid var(--border);
-  border-radius: 16px; overflow: hidden;
+  border-radius: 16px; overflow-x: auto;           /* FIX: scroll horizontal en móvil */
   box-shadow: 0 1px 4px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.02); }
-table { width: 100%; border-collapse: collapse; }
+table { width: 100%; border-collapse: collapse; min-width: 600px; } /* min-width evita aplastamiento */
 thead tr { background: var(--surface2); }
 th { padding: 13px 16px; text-align: left; font-size: .72rem; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+  text-transform: uppercase; letter-spacing: 1px; color: var(--muted); white-space: nowrap; }
 td { padding: 13px 16px; border-top: 1px solid var(--border); font-size: .875rem;
   vertical-align: middle; }
 tr:hover td { background: var(--surface2); transition: background .1s; }
+
+/* ── Skeleton loader ──────────────────────────────────────────────────────── */
+@keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+.skeleton { border-radius: 8px; background: linear-gradient(90deg, var(--surface2) 25%, var(--border) 50%, var(--surface2) 75%);
+  background-size: 400px 100%; animation: shimmer 1.4s ease infinite; }
+.skeleton-text { height: 14px; margin-bottom: 8px; }
+.skeleton-text.w-3\/4 { width: 75%; }
+.skeleton-text.w-1\/2 { width: 50%; }
+.skeleton-text.w-full { width: 100%; }
+.skeleton-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 22px; }
+
+/* ── Toast notifications ──────────────────────────────────────────────────── */
+.toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+  display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+.toast { pointer-events: all; display: flex; align-items: center; gap: 10px;
+  padding: 12px 18px; border-radius: 12px; font-size: .85rem; font-weight: 500;
+  box-shadow: 0 8px 24px rgba(0,0,0,.15); min-width: 260px; max-width: 380px;
+  animation: toastIn .25s ease; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(12px) scale(.97); } to { opacity: 1; transform: none; } }
+.toast-success { background: var(--green); color: #fff; }
+.toast-error { background: var(--danger); color: #fff; }
+.toast-info { background: var(--accent2); color: #fff; }
 
 /* ── Formularios ──────────────────────────────────────────────────────────── */
 .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
@@ -149,6 +170,7 @@ tr:hover td { background: var(--surface2); transition: background .1s; }
 .empty { display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 12px; padding: 56px 20px; color: var(--muted); text-align: center; }
 .empty p { font-size: .9rem; }
+.empty-action { margin-top: 4px; }
 
 /* ── File chip ────────────────────────────────────────────────────────────── */
 .file-chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px;
@@ -197,10 +219,24 @@ tr:hover td { background: var(--surface2); transition: background .1s; }
   box-shadow: 0 16px 40px rgba(0,0,0,.14); }
 
 /* ── Responsive ───────────────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  /* Tablet: sidebar se colapsa a iconos */
+  .sidebar { width: 64px !important; }
+  .sidebar .nav-label { display: none; }
+  .sidebar .logo-text { display: none; }
+  .sidebar .user-name { display: none; }
+  .sidebar .user-role { display: none; }
+  .main-content { margin-left: 64px; }
+}
+
 @media (max-width: 768px) {
   .main-content { margin-left: 0; padding: 80px 16px 24px; }
-  .sidebar { transform: translateX(-100%); transition: transform .2s ease; z-index: 200; }
+  .sidebar { transform: translateX(-100%); transition: transform .2s ease; z-index: 200; width: var(--sidebar-w) !important; }
   .sidebar.sidebar-open { transform: translateX(0); }
+  .sidebar .nav-label { display: inline !important; }
+  .sidebar .logo-text { display: block !important; }
+  .sidebar .user-name { display: block !important; }
+  .sidebar .user-role { display: block !important; }
   .sidebar-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 150; }
   .sidebar-backdrop.show { display: block; }
   .sidebar-close-btn { display: flex !important; }

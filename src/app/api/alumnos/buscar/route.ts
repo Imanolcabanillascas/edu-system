@@ -9,19 +9,29 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const dni = searchParams.get("dni")?.trim();
+  const nombre = searchParams.get("nombre")?.trim();
 
-  if (!dni) return NextResponse.json({ error: "DNI requerido" }, { status: 400 });
+  if (!dni && !nombre) return NextResponse.json({ error: "Indica dni o nombre" }, { status: 400 });
 
-  const alumno = await prisma.alumno.findUnique({
-    where: { dni },
+  const alumnos = await prisma.alumno.findMany({
+    where: dni
+      ? { dni: { contains: dni } }
+      : { usuario: { nombre: { contains: nombre!, mode: "insensitive" } } },
+    take: 10,
     select: {
-      id: true, dni: true, anoIngreso: true,
-      usuario: { select: { nombre: true } },
-      matricula: { select: { estado: true } },
-      seccion: { select: { nombre: true, grado: { select: { nombre: true } } } },
+      id: true, dni: true, estado: true,
+      usuario: { select: { nombre: true, email: true } },
+      // Matrícula más reciente para saber la sección actual
+      matriculas: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          id: true, estado: true, anoLectivoId: true,
+          seccion: { select: { nombre: true, grado: { select: { nombre: true } } } },
+        },
+      },
     },
   });
 
-  if (!alumno) return NextResponse.json(null);
-  return NextResponse.json(alumno);
+  return NextResponse.json(alumnos);
 }

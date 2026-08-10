@@ -202,7 +202,7 @@ export default function ClasesPage() {
                 <span><IconTeacher size={13} /> {c.profesor.usuario.nombre}</span>
                 {c.horario && <span><IconClock size={13} /> {c.horario}</span>}
                 {c.salon && <span><IconLocation size={13} /> {c.salon}</span>}
-                <span><IconStudent size={13} /> {c.seccion.alumnos?.length ?? 0} alumnos</span>
+                <span><IconStudent size={13} /> {c.seccion._count?.matriculas ?? 0} alumno(s)</span>
                 {c.planEstudio.materia.area && (
                   <span className="badge" style={{ background: "var(--surface2)", color: "var(--muted)" }}>{c.planEstudio.materia.area}</span>
                 )}

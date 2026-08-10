@@ -4,9 +4,6 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { calcularPromedioAlumno } from "@/lib/promedios";
 
-// Reporte de notas para el Admin: usa el mismo cálculo ponderado (criterio por
-// nivel) que ve el propio alumno en "Mi Promedio", para que ambas pantallas
-// sean siempre consistentes entre sí.
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session || (session.user as any).rol !== "ADMIN") {
@@ -21,27 +18,27 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Indica seccionId o alumnoId" }, { status: 400 });
   }
 
-  const alumnos = await prisma.alumno.findMany({
-    where: alumnoId ? { id: alumnoId } : { seccionId },
-    select: { id: true, dni: true, usuario: { select: { nombre: true } } },
-    orderBy: { usuario: { nombre: "asc" } },
+  // Obtiene alumnos via matrículas (nuevo modelo — seccionId está en Matricula)
+  const matriculas = await prisma.matricula.findMany({
+    where: alumnoId ? { alumnoId } : { seccionId: seccionId! },
+    select: {
+      alumno: {
+        select: {
+          id: true, dni: true,
+          usuario: { select: { nombre: true } },
+        },
+      },
+    },
   });
-  if (alumnos.length === 0) return NextResponse.json({ alumnos: [], detalle: [] });
 
-  // Se calcula uno por uno (el volumen típico de una sección es pequeño,
-  // y reutilizar el helper evita mantener dos lógicas de promedio distintas)
+  const alumnos = matriculas.map((m) => m.alumno);
+
   const resultados = await Promise.all(
-    alumnos.map(async (a) => {
-      const { promedioAnual, materias, criterio } = await calcularPromedioAlumno(a.id);
-      return { id: a.id, dni: a.dni, nombre: a.usuario.nombre, promedio: promedioAnual, materias, criterio };
+    alumnos.map(async (alumno) => {
+      const { promedioAnual, materias } = await calcularPromedioAlumno(alumno.id);
+      return { alumno, promedioAnual, materias };
     })
   );
 
-  return NextResponse.json({
-    alumnos: resultados.map(({ id, dni, nombre, promedio, criterio }) => ({
-      id, dni, nombre, promedio,
-      aprobado: promedio !== null ? promedio >= criterio.notaAprobatoria : null,
-    })),
-    detalle: resultados.map(({ id, materias }) => ({ alumnoId: id, materias })),
-  });
+  return NextResponse.json(resultados);
 }

@@ -1,116 +1,85 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 
-// Generación 100% en memoria con pdf-lib (sin Chromium/Puppeteer) — bajo consumo de RAM/CPU,
-// ideal para funciones serverless de Vercel. Solo se ejecuta cuando el usuario lo solicita.
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  if (!session || (session.user as any).rol !== "ADMIN") {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
+  }
 
   const { id } = await params;
-  const usuarioSesion = session.user as any;
-
   const profesor = await prisma.profesor.findUnique({
     where: { id },
-    include: {
-      usuario: true,
-      materias: { include: { materia: true } },
+    select: {
+      dni: true, telefono: true, especialidad: true,
+      usuario: { select: { nombre: true, email: true } },
       clases: {
-        include: {
-          materia: true,
-          seccion: { include: { grado: { include: { nivel: true, carrera: true } } } },
-          alumnos: { include: { alumno: { include: { usuario: true } } } },
+        select: {
+          horario: true, salon: true,
+          planEstudio: { select: { materia: { select: { nombre: true } } } },
+          seccion: {
+            select: {
+              nombre: true,
+              grado: { select: { nombre: true, nivel: { select: { nombre: true } } } },
+              // Alumnos via matrículas (nuevo modelo)
+              matriculas: { select: { alumnoId: true, alumno: { select: { usuario: { select: { nombre: true } } } } } },
+            },
+          },
         },
-        orderBy: { horario: "asc" },
       },
     },
   });
 
   if (!profesor) return NextResponse.json({ error: "Profesor no encontrado" }, { status: 404 });
 
-  if (usuarioSesion.rol !== "ADMIN" && profesor.usuarioId !== usuarioSesion.id) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+  const pdf = await PDFDocument.create();
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const regular = await pdf.embedFont(StandardFonts.Helvetica);
 
-  const pdfDoc = await PDFDocument.create();
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-
+  const page = pdf.addPage([595, 842]);
+  const { width, height } = page.getSize();
   const margin = 50;
-  const pageWidth = 595.28;
-  const pageHeight = 841.89;
-  let page = pdfDoc.addPage([pageWidth, pageHeight]);
-  let y = pageHeight - margin;
+  let y = height - 60;
 
-  const colorAccent = rgb(0.486, 0.416, 0.961);
-  const colorMuted = rgb(0.478, 0.459, 0.6);
-  const colorText = rgb(0.1, 0.1, 0.12);
+  // Header
+  page.drawRectangle({ x: 0, y: height - 70, width, height: 70, color: rgb(0.41, 0.32, 0.88) });
+  page.drawText("EduAdmin — Ficha de Profesor", { x: margin, y: height - 28, size: 13, font: bold, color: rgb(1, 1, 1) });
+  page.drawText(`Generado: ${new Date().toLocaleDateString("es-PE")}`, { x: margin, y: height - 48, size: 9, font: regular, color: rgb(0.9, 0.9, 1) });
+  y = height - 90;
 
-  const drawText = (text: string, x: number, size: number, bold = false, color = colorText) => {
-    page.drawText(text, { x, y, size, font: bold ? fontBold : font, color });
-  };
-
-  const newPageIfNeeded = (needed: number) => {
-    if (y - needed < margin) {
-      page = pdfDoc.addPage([pageWidth, pageHeight]);
-      y = pageHeight - margin;
-    }
-  };
-
-  const materiasTexto = profesor.materias.map((m) => m.materia.nombre).join(", ") || "Sin materias asignadas";
-
-  drawText("EduAdmin — Horario de clases", margin, 18, true, colorAccent);
-  y -= 26;
-  drawText(`Profesor: ${profesor.usuario.nombre}`, margin, 12, true);
-  y -= 16;
-  drawText(`DNI: ${profesor.dni}   |   Materias: ${materiasTexto}`, margin, 10, false, colorMuted);
-  y -= 10;
-  page.drawLine({ start: { x: margin, y }, end: { x: pageWidth - margin, y }, thickness: 1, color: colorMuted });
-  y -= 24;
-
-  if (profesor.clases.length === 0) {
-    drawText("Este profesor no tiene clases asignadas.", margin, 11, false, colorMuted);
+  // Datos del profesor
+  page.drawText(profesor.usuario.nombre, { x: margin, y, size: 18, font: bold, color: rgb(0.11, 0.11, 0.16) });
+  y -= 20;
+  page.drawText(`DNI: ${profesor.dni}  |  Email: ${profesor.usuario.email}${profesor.telefono ? `  |  Tel: ${profesor.telefono}` : ""}`, { x: margin, y, size: 9, font: regular, color: rgb(0.42, 0.41, 0.52) });
+  if (profesor.especialidad) {
+    y -= 14;
+    page.drawText(`Especialidad: ${profesor.especialidad}`, { x: margin, y, size: 9, font: regular, color: rgb(0.42, 0.41, 0.52) });
   }
+  y -= 24;
+  page.drawLine({ start: { x: margin, y }, end: { x: width - margin, y }, thickness: 0.5, color: rgb(0.88, 0.89, 0.93) });
+  y -= 16;
+
+  // Clases
+  page.drawText("CLASES ASIGNADAS", { x: margin, y, size: 8, font: bold, color: rgb(0.41, 0.32, 0.88) });
+  y -= 14;
 
   for (const clase of profesor.clases) {
-    newPageIfNeeded(90);
-
-    const nombreClase = `${clase.materia.nombre} — ${clase.seccion.grado.nombre} "${clase.seccion.nombre}"`;
-    drawText(nombreClase, margin, 13, true, colorAccent);
-    y -= 16;
-    drawText(`Horario: ${clase.horario}    Salón: ${clase.salon}`, margin, 10, false, colorMuted);
+    if (y < 80) break;
+    const alumnos = clase.seccion.matriculas.map((m) => m.alumno);
+    page.drawText(`${clase.planEstudio.materia.nombre} — ${clase.seccion.grado.nombre} "${clase.seccion.nombre}"`, { x: margin, y, size: 10, font: bold, color: rgb(0.11, 0.11, 0.16) });
+    y -= 13;
+    page.drawText(`${clase.seccion.grado.nivel.nombre}${clase.horario ? `  ·  ${clase.horario}` : ""}${clase.salon ? `  ·  ${clase.salon}` : ""}  ·  ${alumnos.length} alumno(s)`, { x: margin + 10, y, size: 8, font: regular, color: rgb(0.42, 0.41, 0.52) });
     y -= 18;
-
-    const alumnos = clase.alumnos.map((ac) => ac.alumno);
-    if (alumnos.length === 0) {
-      drawText("Sin alumnos matriculados en esta clase.", margin + 10, 9.5, false, colorMuted);
-      y -= 16;
-    } else {
-      drawText(`Alumnos (${alumnos.length}):`, margin + 10, 9.5, true);
-      y -= 14;
-      for (const alumno of alumnos) {
-        newPageIfNeeded(14);
-        drawText(`•  ${alumno.usuario.nombre}   —   DNI: ${alumno.dni}`, margin + 16, 9.5, false, colorText);
-        y -= 13;
-      }
-    }
-    y -= 12;
   }
 
-  const fechaGeneracion = new Date().toLocaleString("es-PE", { timeZone: "America/Lima" });
-  page.drawText(`Generado el ${fechaGeneracion} (hora de Perú)`, {
-    x: margin, y: margin / 2, size: 8, font, color: colorMuted,
-  });
-
-  const pdfBytes = await pdfDoc.save();
-
-  return new NextResponse(pdfBytes, {
+  const bytes = await pdf.save();
+  return new NextResponse(bytes, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="horario_${profesor.usuario.nombre.replace(/\s+/g, "_")}.pdf"`,
+      "Content-Disposition": `attachment; filename="profesor-${profesor.usuario.nombre.replace(/\s+/g, "-")}.pdf"`,
     },
   });
 }

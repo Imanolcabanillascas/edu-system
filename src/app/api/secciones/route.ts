@@ -18,7 +18,7 @@ export async function GET(req: Request) {
       anoLectivo: { select: { anio: true } },
       grado: { select: { nombre: true, nivel: true } },
       profesorTutor: { select: { id: true, usuario: { select: { nombre: true } } } },
-      alumnos: { select: { id: true } },
+      _count: { select: { matriculas: true } },
     },
   });
   return NextResponse.json(secciones);
@@ -41,14 +41,30 @@ export async function POST(req: Request) {
       select: {
         id: true, nombre: true, anoLectivoId: true,
         anoLectivo: { select: { anio: true } },
-        grado: { select: { nombre: true, nivel: true } },
+        grado: { select: { nombre: true, nivel: { select: { nombre: true } } } },
+        _count: { select: { matriculas: true } },
       },
     });
     return NextResponse.json(seccion, { status: 201 });
   } catch (e: any) {
-    if (e.code === "P2002") return NextResponse.json({ error: "Ya existe esa sección/periodo en este grado y año" }, { status: 409 });
+    if (e.code === "P2002") return NextResponse.json({ error: "Ya existe esa sección en este grado y año" }, { status: 409 });
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
+}
+
+export async function PUT(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session || (session.user as any).rol !== "ADMIN") {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
+  }
+
+  const { id, profesorTutorId } = await req.json();
+  const seccion = await prisma.seccion.update({
+    where: { id },
+    data: { profesorTutorId: profesorTutorId || null },
+    select: { id: true, nombre: true, profesorTutorId: true },
+  });
+  return NextResponse.json(seccion);
 }
 
 export async function DELETE(req: Request) {
@@ -62,6 +78,6 @@ export async function DELETE(req: Request) {
     await prisma.seccion.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: "No se puede eliminar: tiene alumnos o clases asociadas" }, { status: 409 });
+    return NextResponse.json({ error: "No se puede eliminar: tiene clases o matrículas asociadas" }, { status: 409 });
   }
 }

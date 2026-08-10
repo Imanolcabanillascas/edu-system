@@ -4,6 +4,14 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { nowPeru } from "@/lib/utils";
 
+const matriculaSelect = {
+  id: true, monto: true, fechaVencimiento: true, fechaPago: true,
+  medioPago: true, estado: true, observaciones: true, anoLectivoId: true,
+  alumno: { select: { id: true, dni: true, usuario: { select: { nombre: true } } } },
+  anoLectivo: { select: { anio: true } },
+  seccion: { select: { id: true, nombre: true, grado: { select: { nombre: true, nivel: { select: { nombre: true } } } } } },
+};
+
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -19,30 +27,19 @@ export async function GET() {
   });
   if (!usuario) return NextResponse.json([]);
 
-  const alumnoSelect = { select: { dni: true, usuario: { select: { nombre: true } } } };
-  const anoLectivoSelect = { select: { anio: true } };
-
-  let matriculas;
   if (usuario.rol === "ALUMNO" && usuario.alumno) {
-    matriculas = await prisma.matricula.findMany({
+    const matriculas = await prisma.matricula.findMany({
       where: { alumnoId: usuario.alumno.id },
-      select: {
-        id: true, monto: true, fechaVencimiento: true, fechaPago: true,
-        medioPago: true, estado: true, observaciones: true,
-        alumno: alumnoSelect, anoLectivo: anoLectivoSelect,
-      },
+      select: matriculaSelect,
+      orderBy: { createdAt: "desc" },
     });
-  } else {
-    matriculas = await prisma.matricula.findMany({
-      select: {
-        id: true, monto: true, fechaVencimiento: true, fechaPago: true,
-        medioPago: true, estado: true, observaciones: true,
-        alumno: alumnoSelect, anoLectivo: anoLectivoSelect,
-      },
-      orderBy: { fechaVencimiento: "asc" },
-    });
+    return NextResponse.json(matriculas);
   }
 
+  const matriculas = await prisma.matricula.findMany({
+    select: matriculaSelect,
+    orderBy: { createdAt: "desc" },
+  });
   return NextResponse.json(matriculas);
 }
 
@@ -52,32 +49,39 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
   }
 
-  const { alumnoId, anoLectivoId, monto, fechaVencimiento, observaciones, medioPago, marcarPagada } = await req.json();
+  const { alumnoId, anoLectivoId, seccionId, monto, fechaVencimiento, observaciones, medioPago, marcarPagada } = await req.json();
   if (!alumnoId || !anoLectivoId || !monto || !fechaVencimiento) {
     return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
   }
 
-  const matricula = await prisma.matricula.upsert({
-    where: { alumnoId },
-    update: {
-      anoLectivoId, monto: Number(monto), fechaVencimiento: new Date(fechaVencimiento), observaciones,
-      estado: marcarPagada ? "PAGADO" : "PENDIENTE",
-      medioPago: marcarPagada ? medioPago : null,
-      fechaPago: marcarPagada ? nowPeru() : null,
-    },
-    create: {
-      alumnoId, anoLectivoId, monto: Number(monto), fechaVencimiento: new Date(fechaVencimiento), observaciones,
-      estado: marcarPagada ? "PAGADO" : "PENDIENTE",
-      medioPago: marcarPagada ? medioPago : null,
-      fechaPago: marcarPagada ? nowPeru() : null,
-    },
-    select: {
-      id: true, monto: true, estado: true,
-      alumno: { select: { dni: true, usuario: { select: { nombre: true } } } },
-      anoLectivo: { select: { anio: true } },
-    },
-  });
-  return NextResponse.json(matricula, { status: 201 });
+  try {
+    const matricula = await prisma.matricula.upsert({
+      where: { alumnoId_anoLectivoId: { alumnoId, anoLectivoId } },
+      update: {
+        seccionId: seccionId || null,
+        monto: Number(monto),
+        fechaVencimiento: new Date(fechaVencimiento),
+        observaciones: observaciones || null,
+        estado: marcarPagada ? "PAGADO" : "PENDIENTE",
+        medioPago: marcarPagada ? (medioPago ?? null) : null,
+        fechaPago: marcarPagada ? nowPeru() : null,
+      },
+      create: {
+        alumnoId, anoLectivoId,
+        seccionId: seccionId || null,
+        monto: Number(monto),
+        fechaVencimiento: new Date(fechaVencimiento),
+        observaciones: observaciones || null,
+        estado: marcarPagada ? "PAGADO" : "PENDIENTE",
+        medioPago: marcarPagada ? (medioPago ?? null) : null,
+        fechaPago: marcarPagada ? nowPeru() : null,
+      },
+      select: matriculaSelect,
+    });
+    return NextResponse.json(matricula, { status: 201 });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
 }
 
 export async function PATCH(req: Request) {
@@ -86,21 +90,32 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
   }
 
-  const { id, estado, medioPago, observaciones } = await req.json();
+  const body = await req.json();
+  const { id, estado, medioPago, observaciones, seccionId, monto, fechaVencimiento } = body;
+
+  const data: any = {};
+
+  // Actualizar estado
+  if (estado !== undefined) {
+    data.estado = estado;
+    data.medioPago = estado === "PAGADO" ? (medioPago ?? null) : null;
+    data.fechaPago = estado === "PAGADO" ? nowPeru() : null;
+  }
+
+  // Actualizar sección
+  if (seccionId !== undefined) data.seccionId = seccionId || null;
+
+  // Actualizar observaciones
+  if (observaciones !== undefined) data.observaciones = observaciones || null;
+
+  // Actualizar costo y vencimiento
+  if (monto !== undefined) data.monto = Number(monto);
+  if (fechaVencimiento !== undefined) data.fechaVencimiento = new Date(fechaVencimiento);
 
   const matricula = await prisma.matricula.update({
     where: { id },
-    data: {
-      estado,
-      medioPago: estado === "PAGADO" ? medioPago : null,
-      fechaPago: estado === "PAGADO" ? nowPeru() : null,
-      observaciones,
-    },
-    select: {
-      id: true, monto: true, estado: true,
-      alumno: { select: { dni: true, usuario: { select: { nombre: true } } } },
-      anoLectivo: { select: { anio: true } },
-    },
+    data,
+    select: matriculaSelect,
   });
   return NextResponse.json(matricula);
 }

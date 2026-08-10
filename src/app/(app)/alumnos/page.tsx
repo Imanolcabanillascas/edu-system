@@ -1,24 +1,23 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { initials, avatarColor, NIVEL_LABEL, estadoColor } from "@/lib/utils";
-import {
-  IconStudent, IconSearch, IconPlus, IconEdit, IconTrash, IconLoader, IconLogout,
-} from "@/components/icons";
+import { IconStudent, IconSearch, IconPlus, IconEdit, IconTrash, IconLoader, IconLogout } from "@/components/icons";
+import { useToast } from "@/components/Toast";
 
 const ANO_ACTUAL = new Date().getFullYear();
 const ESTADOS = ["ACTIVO", "EGRESADO", "RETIRADO"] as const;
 
+interface Matricula { estado: string; seccion: { nombre: string; grado: { nombre: string } } | null; }
 interface AlumnoRow {
-  id: string; dni: string;
-  fechaNac: string | null; anoIngreso: number;
+  id: string; dni: string; fechaNac: string | null; anoIngreso: number;
   estado: "ACTIVO" | "EGRESADO" | "RETIRADO";
   tutorDni: string | null; tutorNombre: string | null; tutorTelefono: string | null;
   usuario: { id: string; nombre: string; email: string };
-  matricula: { estado: string } | null;
-  seccion: { id: string; nombre: string; gradoId: string; grado: { nombre: string; nivel: any } } | null;
+  matriculas: Matricula[];
 }
 
 export default function AlumnosPage() {
+  const { toast } = useToast();
   const [alumnos, setAlumnos] = useState<AlumnoRow[]>([]);
   const [niveles, setNiveles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,35 +47,29 @@ export default function AlumnosPage() {
     setLoading(false);
   }, [filtroEstado, search]);
 
-  const loadNiveles = async () => {
-    const res = await fetch("/api/niveles");
-    setNiveles(await res.json());
-  };
-
-  useEffect(() => { loadAlumnos(1); loadNiveles(); }, [filtroEstado]);
+  useEffect(() => { fetch("/api/niveles").then((r) => r.json()).then(setNiveles); }, []);
+  useEffect(() => { loadAlumnos(1); }, [filtroEstado]);
 
   const nivelObj = niveles.find((n: any) => n.tipo === nivelSel);
   const gradosDisponibles = nivelObj?.grados ?? [];
   const gradoObj = gradosDisponibles.find((g: any) => g.id === gradoSel);
   const seccionesDisponibles = gradoObj?.secciones ?? [];
 
+  // Matrícula más reciente del alumno
+  const matriculaActual = (a: AlumnoRow) => a.matriculas?.[0] ?? null;
+
   const openNew = () => {
     setForm({ nombre: "", email: "", dni: "", fechaNac: "", anoIngreso: ANO_ACTUAL,
-      estado: "ACTIVO", tutorNombre: "", tutorDni: "", tutorTelefono: "", password: "", seccionId: "" });
+      estado: "ACTIVO", tutorNombre: "", tutorDni: "", tutorTelefono: "", password: "" });
     setNivelSel(""); setGradoSel(""); setCambiarPassword(true); setError(""); setModal("new");
   };
 
   const openEdit = (a: AlumnoRow) => {
-    setForm({
-      id: a.id, nombre: a.usuario.nombre, email: a.usuario.email, dni: a.dni,
-      fechaNac: a.fechaNac ? a.fechaNac.slice(0, 10) : "",
-      anoIngreso: a.anoIngreso, estado: a.estado,
-      tutorNombre: a.tutorNombre ?? "", tutorDni: a.tutorDni ?? "",
-      tutorTelefono: a.tutorTelefono ?? "", seccionId: a.seccion?.id ?? "", password: "",
-    });
-    if (a.seccion) { setNivelSel(a.seccion.grado.nivel.tipo); setGradoSel(a.seccion.gradoId ?? ""); }
-    else { setNivelSel(""); setGradoSel(""); }
-    setCambiarPassword(false); setError(""); setModal(a);
+    setForm({ id: a.id, nombre: a.usuario.nombre, email: a.usuario.email, dni: a.dni,
+      fechaNac: a.fechaNac ? a.fechaNac.slice(0, 10) : "", anoIngreso: a.anoIngreso,
+      estado: a.estado, tutorNombre: a.tutorNombre ?? "", tutorDni: a.tutorDni ?? "",
+      tutorTelefono: a.tutorTelefono ?? "", password: "" });
+    setNivelSel(""); setGradoSel(""); setCambiarPassword(false); setError(""); setModal(a);
   };
 
   const close = () => setModal(null);
@@ -84,102 +77,119 @@ export default function AlumnosPage() {
   const save = async () => {
     if (!form.nombre?.trim() || !form.dni || !form.email) { setError("Nombre, DNI y email son obligatorios"); return; }
     if (form.dni.length !== 8) { setError("El DNI debe tener 8 dígitos"); return; }
-    if (modal === "new" && (!form.password || form.password.length < 6)) {
-      setError("La contraseña debe tener al menos 6 caracteres"); return;
-    }
+    if (modal === "new" && (!form.password || form.password.length < 6)) { setError("La contraseña debe tener al menos 6 caracteres"); return; }
     setSaving(true); setError("");
+    const esNuevo = modal === "new";
     const res = await fetch("/api/alumnos", {
-      method: modal === "new" ? "POST" : "PUT",
+      method: esNuevo ? "POST" : "PUT",
       body: JSON.stringify({ ...form, password: cambiarPassword ? form.password : undefined }),
     });
     if (!res.ok) { setError((await res.json()).error ?? "Error al guardar"); setSaving(false); return; }
-    setSaving(false); close(); loadAlumnos(page);
+    setSaving(false); close();
+    toast(esNuevo ? "Alumno creado correctamente" : "Alumno actualizado correctamente");
+    loadAlumnos(page);
   };
 
   const retirar = async (id: string) => {
     if (!confirm("¿Marcar este alumno como Retirado?")) return;
     await fetch("/api/alumnos", { method: "PUT", body: JSON.stringify({ id, estado: "RETIRADO" }) });
+    toast("Alumno marcado como retirado", "info");
     loadAlumnos(page);
   };
 
   const remove = async (id: string) => {
     if (!confirm("¿Eliminar este alumno permanentemente?")) return;
-    await fetch("/api/alumnos", { method: "DELETE", body: JSON.stringify({ id }) });
+    const res = await fetch("/api/alumnos", { method: "DELETE", body: JSON.stringify({ id }) });
+    if (!res.ok) { toast((await res.json()).error, "error"); return; }
+    toast("Alumno eliminado", "info");
     loadAlumnos(page);
   };
-
-  const handleSearch = (e: React.FormEvent) => { e.preventDefault(); loadAlumnos(1); };
 
   return (
     <div>
       <div className="page-header">
         <h1><IconStudent size={26} /> Alumnos</h1>
-        <p>Gestiona el padrón de alumnos del colegio</p>
+        <p>Gestiona el padrón de alumnos · La sección se asigna desde Matrículas</p>
       </div>
 
-      <form className="toolbar" onSubmit={handleSearch}>
+      <form className="toolbar" onSubmit={(e) => { e.preventDefault(); loadAlumnos(1); }}>
         <div className="search-wrap">
           <IconSearch size={16} className="search-icon" />
-          <input className="search-input" placeholder="Buscar por nombre, DNI o sección…"
+          <input className="search-input" placeholder="Buscar por nombre o DNI…"
             value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)} style={{ minWidth: 130 }}>
           {ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
         </select>
         <button type="submit" className="btn btn-ghost btn-sm">Buscar</button>
-        <button type="button" className="btn btn-primary" onClick={openNew}>
-          <IconPlus size={16} /> Nuevo alumno
-        </button>
+        <button type="button" className="btn btn-primary" onClick={openNew}><IconPlus size={16} /> Nuevo alumno</button>
       </form>
 
-      <div className="muted-label" style={{ marginBottom: 12 }}>{total} alumno(s) encontrado(s)</div>
+      <div className="muted-label" style={{ marginBottom: 12 }}>{total} alumno(s)</div>
 
       <div className="table-wrap">
         <table>
           <thead>
-            <tr><th>Alumno</th><th>DNI</th><th>Sección</th><th>Matrícula</th><th>Estado</th><th>Acciones</th></tr>
+            <tr><th>Alumno</th><th>DNI</th><th>Sección actual</th><th>Matrícula</th><th>Estado</th><th>Acciones</th></tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6}><div className="empty"><IconLoader size={24} /></div></td></tr>}
-            {!loading && alumnos.length === 0 && (
-              <tr><td colSpan={6}><div className="empty"><IconStudent size={32} style={{ color: "var(--muted)" }} /><p>No se encontraron alumnos</p></div></td></tr>
-            )}
-            {alumnos.map((a) => (
-              <tr key={a.id}>
-                <td>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div className="avatar" style={{ background: avatarColor(a.usuario.nombre) + "33", color: avatarColor(a.usuario.nombre) }}>
-                      {initials(a.usuario.nombre)}
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 500 }}>{a.usuario.nombre}</div>
-                      <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>{a.usuario.email}</div>
-                    </div>
-                  </div>
-                </td>
-                <td style={{ fontFamily: "monospace", color: "var(--muted)" }}>{a.dni}</td>
-                <td style={{ color: "var(--muted)" }}>
-                  {a.seccion ? `${a.seccion.grado.nombre} "${a.seccion.nombre}"` : "—"}
-                </td>
-                <td>
-                  {a.matricula
-                    ? <span className="badge" style={{ background: estadoColor(a.matricula.estado) + "22", color: estadoColor(a.matricula.estado) }}>{a.matricula.estado}</span>
-                    : <span style={{ color: "var(--muted)" }}>—</span>}
-                </td>
-                <td>
-                  <span className="badge" style={{ background: estadoColor(a.estado) + "22", color: estadoColor(a.estado) }}>{a.estado}</span>
-                </td>
-                <td>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    <button className="btn btn-ghost btn-icon btn-sm" title="Editar" onClick={() => openEdit(a)}><IconEdit size={15} /></button>
-                    {a.estado === "ACTIVO" && (
-                      <button className="btn btn-ghost btn-icon btn-sm" title="Retirar" onClick={() => retirar(a.id)}><IconLogout size={15} /></button>
-                    )}
-                    <button className="btn btn-danger btn-icon btn-sm" title="Eliminar" onClick={() => remove(a.id)}><IconTrash size={15} /></button>
-                  </div>
-                </td>
+            {loading && Array.from({ length: 5 }).map((_, i) => (
+              <tr key={i}>
+                <td><div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <div className="skeleton" style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}><div className="skeleton skeleton-text" style={{ width: "70%" }} /><div className="skeleton skeleton-text" style={{ width: "50%", height: 10 }} /></div>
+                </div></td>
+                {[80, 120, 80, 70, 70].map((w, j) => <td key={j}><div className="skeleton skeleton-text" style={{ width: w }} /></td>)}
               </tr>
             ))}
+            {!loading && alumnos.length === 0 && (
+              <tr><td colSpan={6}><div className="empty">
+                <IconStudent size={40} style={{ color: "var(--border)" }} />
+                <p>{search ? `Sin resultados para "${search}"` : `No hay alumnos ${filtroEstado.toLowerCase()}s`}</p>
+                {!search && filtroEstado === "ACTIVO" && (
+                  <button className="btn btn-primary btn-sm" onClick={openNew}><IconPlus size={14} /> Crear primer alumno</button>
+                )}
+              </div></td></tr>
+            )}
+            {alumnos.map((a) => {
+              const mat = matriculaActual(a);
+              return (
+                <tr key={a.id}>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div className="avatar" style={{ background: avatarColor(a.usuario.nombre) + "33", color: avatarColor(a.usuario.nombre) }}>
+                        {initials(a.usuario.nombre)}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 500 }}>{a.usuario.nombre}</div>
+                        <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>{a.usuario.email}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ fontFamily: "monospace", color: "var(--muted)" }}>{a.dni}</td>
+                  <td style={{ color: "var(--muted)" }}>
+                    {mat?.seccion ? `${mat.seccion.grado.nombre} "${mat.seccion.nombre}"` : "—"}
+                  </td>
+                  <td>
+                    {mat ? (
+                      <span className="badge" style={{ background: estadoColor(mat.estado) + "22", color: estadoColor(mat.estado) }}>{mat.estado}</span>
+                    ) : <span style={{ color: "var(--muted)" }}>Sin matrícula</span>}
+                  </td>
+                  <td>
+                    <span className="badge" style={{ background: estadoColor(a.estado) + "22", color: estadoColor(a.estado) }}>{a.estado}</span>
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button className="btn btn-ghost btn-icon btn-sm" title="Editar" onClick={() => openEdit(a)}><IconEdit size={15} /></button>
+                      {a.estado === "ACTIVO" && (
+                        <button className="btn btn-ghost btn-icon btn-sm" title="Retirar" onClick={() => retirar(a.id)}><IconLogout size={15} /></button>
+                      )}
+                      <button className="btn btn-danger btn-icon btn-sm" title="Eliminar" onClick={() => remove(a.id)}><IconTrash size={15} /></button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -194,7 +204,7 @@ export default function AlumnosPage() {
 
       {modal && (
         <div className="overlay" onClick={(e) => e.target === e.currentTarget && close()}>
-          <div className="modal" style={{ maxWidth: 580, maxHeight: "92vh", overflowY: "auto" }}>
+          <div className="modal" style={{ maxWidth: 560, maxHeight: "92vh", overflowY: "auto" }}>
             <h2><IconStudent size={20} /> {modal === "new" ? "Nuevo alumno" : "Editar alumno"}</h2>
             {error && <div className="alert-error">{error}</div>}
 
@@ -220,26 +230,7 @@ export default function AlumnosPage() {
                   {ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
                 </select></div>
             </div>
-            <div className="form-row">
-              <div className="form-group"><label>Nivel</label>
-                <select value={nivelSel} onChange={(e) => { setNivelSel(e.target.value); setGradoSel(""); setForm({ ...form, seccionId: "" }); }}>
-                  <option value="">Seleccionar…</option>
-                  {niveles.map((n: any) => <option key={n.id} value={n.tipo}>{NIVEL_LABEL[n.tipo]}</option>)}
-                </select></div>
-              <div className="form-group"><label>Grado</label>
-                <select value={gradoSel} disabled={!nivelSel} onChange={(e) => { setGradoSel(e.target.value); setForm({ ...form, seccionId: "" }); }}>
-                  <option value="">Seleccionar…</option>
-                  {gradosDisponibles.map((g: any) => <option key={g.id} value={g.id}>{g.nombre}</option>)}
-                </select></div>
-            </div>
-            <div className="form-group"><label>Sección</label>
-              <select value={form.seccionId || ""} disabled={!gradoSel} onChange={(e) => setForm({ ...form, seccionId: e.target.value })}>
-                <option value="">Seleccionar…</option>
-                {seccionesDisponibles.map((s: any) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-              </select>
-              {gradoSel && seccionesDisponibles.length === 0 && (
-                <div className="form-hint">No hay secciones en el año activo — créalas en "Estructura Académica"</div>
-              )}</div>
+            <div className="form-hint">La sección se asigna desde el módulo de <strong>Matrículas</strong>.</div>
 
             <div className="form-section-title" style={{ marginTop: 20 }}>Apoderado</div>
             <div className="form-group"><label>Nombre del apoderado</label>
@@ -259,10 +250,8 @@ export default function AlumnosPage() {
               <div className="form-group">
                 <label>{modal === "new" ? "Contraseña" : "Nueva contraseña"} <span style={{ color: "var(--danger)" }}>*</span></label>
                 <input type="text" value={form.password || ""} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Mínimo 6 caracteres" />
-                <div className="form-hint">El alumno usará el email y esta contraseña para iniciar sesión.</div>
               </div>
             )}
-
             <div className="modal-actions">
               <button className="btn btn-ghost" onClick={close}>Cancelar</button>
               <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? "Guardando…" : "Guardar"}</button>

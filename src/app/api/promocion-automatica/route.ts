@@ -4,125 +4,149 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { calcularPromedioAlumno } from "@/lib/promedios";
 
-// Vista previa: para cada sección del año de ORIGEN, calcula el promedio de
-// cada alumno activo y determina si aprueba (según el criterio de su Nivel)
-// y a qué grado pasaría (vía Grado.gradoSiguienteId). No modifica nada todavía;
-// el Admin revisa esta lista antes de confirmar con POST /aplicar.
-export async function GET(req: Request) {
+export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session || (session.user as any).rol !== "ADMIN") {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
   }
 
-  const { searchParams } = new URL(req.url);
-  const anoOrigenId = searchParams.get("anoLectivoOrigenId");
-  if (!anoOrigenId) return NextResponse.json({ error: "Falta el año lectivo de origen" }, { status: 400 });
+  const anoActivo = await prisma.anoLectivo.findFirst({
+    where: { activo: true },
+    select: { id: true, anio: true },
+  });
+  if (!anoActivo) return NextResponse.json({ error: "No hay año lectivo activo" }, { status: 400 });
 
+  // Obtiene todas las secciones del año activo con sus alumnos matriculados
   const secciones = await prisma.seccion.findMany({
-    where: { anoLectivoId: anoOrigenId },
+    where: { anoLectivoId: anoActivo.id },
     select: {
       id: true, nombre: true,
       grado: {
         select: {
-          id: true, nombre: true, ordenSecuencia: true,
+          id: true, nombre: true,
           nivel: { select: { id: true, nombre: true, tipo: true } },
           gradoSiguiente: { select: { id: true, nombre: true } },
         },
       },
-      alumnos: { where: { estado: "ACTIVO" }, select: { id: true, dni: true, usuario: { select: { nombre: true } } } },
+      // Alumnos via matrículas del año activo
+      matriculas: {
+        where: { anoLectivoId: anoActivo.id },
+        select: { alumnoId: true, alumno: { select: { id: true, usuario: { select: { nombre: true } } } } },
+      },
     },
   });
 
-  const resultado = await Promise.all(
-    secciones
-      .filter((s) => s.alumnos.length > 0)
-      .map(async (s) => {
-        const alumnosConPromedio = await Promise.all(
-          s.alumnos.map(async (a) => {
-            const { promedioAnual, criterio } = await calcularPromedioAlumno(a.id);
-            const aprueba = promedioAnual !== null && promedioAnual >= criterio.notaAprobatoria;
-            return { id: a.id, dni: a.dni, nombre: a.usuario.nombre, promedio: promedioAnual, aprueba };
-          })
-        );
-        return {
-          seccionId: s.id,
-          seccionNombre: s.nombre,
-          grado: s.grado,
-          esUltimoGrado: !s.grado.gradoSiguiente,
-          alumnos: alumnosConPromedio,
-        };
-      })
+  const seccionesConAlumnos = secciones.filter((s) => s.matriculas.length > 0);
+
+  const vistaPrevia = await Promise.all(
+    seccionesConAlumnos.map(async (seccion) => {
+      const alumnos = await Promise.all(
+        seccion.matriculas.map(async ({ alumno }) => {
+          const { promedioAnual } = await calcularPromedioAlumno(alumno.id);
+          return {
+            id: alumno.id,
+            nombre: alumno.usuario.nombre,
+            promedioAnual,
+            aprueba: promedioAnual != null && promedioAnual >= 10.5,
+          };
+        })
+      );
+
+      return {
+        seccionId: seccion.id,
+        seccionNombre: seccion.nombre,
+        grado: seccion.grado,
+        esUltimoGrado: !seccion.grado.gradoSiguiente,
+        alumnos,
+      };
+    })
   );
 
-  return NextResponse.json(resultado);
+  return NextResponse.json({ anoActivo, vistaPrevia });
 }
 
-// Aplica la promoción: recibe la lista ya revisada por el Admin (puede incluir
-// ajustes manuales sobre quién pasa y quién repite) y mueve a cada alumno
-// "promovido" al grado siguiente en el año destino (creando la sección si falta),
-// marca como EGRESADO a quienes terminan el último grado, y deja sin tocar a
-// quienes repiten (mismo grado, año origen — el Admin decide aparte si los
-// reinscribe manualmente en el mismo grado del año nuevo).
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session || (session.user as any).rol !== "ADMIN") {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
   }
 
-  const { anoLectivoDestinoId, decisiones } = await req.json();
-  // decisiones: [{ alumnoId, seccionOrigenId, accion: "PROMOVER" | "EGRESAR" | "REPETIR" }]
-  if (!anoLectivoDestinoId || !Array.isArray(decisiones) || decisiones.length === 0) {
-    return NextResponse.json({ error: "Faltan datos para aplicar la promoción" }, { status: 400 });
+  const { decisiones, anoLectivoDestinoId } = await req.json();
+  // decisiones: [{ alumnoId, seccionOrigenId, accion: "PROMOVER" | "REPETIR" | "EGRESAR" }]
+
+  if (!decisiones?.length || !anoLectivoDestinoId) {
+    return NextResponse.json({ error: "Faltan datos" }, { status: 400 });
   }
 
-  try {
-    let promovidos = 0, egresados = 0, repiten = 0;
+  const anoActivo = await prisma.anoLectivo.findFirst({
+    where: { activo: true }, select: { id: true },
+  });
+  if (!anoActivo) return NextResponse.json({ error: "No hay año lectivo activo" }, { status: 400 });
 
-    await prisma.$transaction(async (tx) => {
-      // Agrupa por sección de origen para reutilizar el cálculo de grado destino
-      const seccionIds = [...new Set(decisiones.map((d: any) => d.seccionOrigenId))];
-      const secciones = await tx.seccion.findMany({
-        where: { id: { in: seccionIds } },
-        select: { id: true, nombre: true, grado: { select: { gradoSiguienteId: true } } },
+  let promovidos = 0, repetidores = 0, egresados = 0;
+
+  for (const d of decisiones) {
+    if (d.accion === "EGRESAR") {
+      await prisma.alumno.update({ where: { id: d.alumnoId }, data: { estado: "EGRESADO" } });
+      egresados++;
+      continue;
+    }
+
+    if (d.accion === "PROMOVER") {
+      // Busca el grado siguiente de la sección origen
+      const seccionOrigen = await prisma.seccion.findUnique({
+        where: { id: d.seccionOrigenId },
+        select: { grado: { select: { gradoSiguienteId: true } } },
       });
-      const seccionMap = new Map(secciones.map((s) => [s.id, s]));
+      const gradoDestinoId = seccionOrigen?.grado.gradoSiguienteId;
+      if (!gradoDestinoId) continue;
 
-      // Cache de secciones destino ya creadas/encontradas en esta corrida (gradoId -> seccionId)
-      const seccionDestinoCache = new Map<string, string>();
+      // Busca o crea una sección en el grado destino para el año destino
+      const seccionDestino = await prisma.seccion.findFirst({
+        where: { gradoId: gradoDestinoId, anoLectivoId: anoLectivoDestinoId },
+        select: { id: true },
+      });
+      if (!seccionDestino) continue;
 
-      for (const d of decisiones) {
-        if (d.accion === "REPETIR") { repiten++; continue; }
+      // Actualiza la matrícula del año destino con la nueva sección
+      await prisma.matricula.upsert({
+        where: { alumnoId_anoLectivoId: { alumnoId: d.alumnoId, anoLectivoId: anoLectivoDestinoId } },
+        update: { seccionId: seccionDestino.id },
+        create: {
+          alumnoId: d.alumnoId, anoLectivoId: anoLectivoDestinoId,
+          seccionId: seccionDestino.id, monto: 0,
+          fechaVencimiento: new Date(new Date().getFullYear() + 1, 2, 31),
+        },
+      });
+      promovidos++;
+    }
 
-        if (d.accion === "EGRESAR") {
-          await tx.alumno.update({ where: { id: d.alumnoId }, data: { estado: "EGRESADO", seccionId: null } });
-          egresados++;
-          continue;
-        }
+    if (d.accion === "REPETIR") {
+      // Mantiene al alumno en la misma sección el año siguiente
+      const seccionOrigen = await prisma.seccion.findUnique({
+        where: { id: d.seccionOrigenId },
+        select: { gradoId: true },
+      });
+      if (!seccionOrigen) continue;
 
-        // PROMOVER
-        const seccionOrigen = seccionMap.get(d.seccionOrigenId);
-        const gradoSiguienteId = seccionOrigen?.grado.gradoSiguienteId;
-        if (!gradoSiguienteId) continue; // sin grado siguiente configurado, se omite (no se puede promover a ciegas)
+      const seccionDestino = await prisma.seccion.findFirst({
+        where: { gradoId: seccionOrigen.gradoId, anoLectivoId: anoLectivoDestinoId },
+        select: { id: true },
+      });
+      if (!seccionDestino) continue;
 
-        const cacheKey = `${gradoSiguienteId}|${seccionOrigen!.nombre}`;
-        let seccionDestinoId = seccionDestinoCache.get(cacheKey);
-        if (!seccionDestinoId) {
-          const seccionDestino = await tx.seccion.upsert({
-            where: { gradoId_anoLectivoId_nombre: { gradoId: gradoSiguienteId, anoLectivoId: anoLectivoDestinoId, nombre: seccionOrigen!.nombre } },
-            update: {},
-            create: { gradoId: gradoSiguienteId, anoLectivoId: anoLectivoDestinoId, nombre: seccionOrigen!.nombre },
-          });
-          seccionDestinoId = seccionDestino.id;
-          seccionDestinoCache.set(cacheKey, seccionDestinoId);
-        }
-
-        await tx.alumno.update({ where: { id: d.alumnoId }, data: { seccionId: seccionDestinoId } });
-        promovidos++;
-      }
-    });
-
-    return NextResponse.json({ promovidos, egresados, repiten });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+      await prisma.matricula.upsert({
+        where: { alumnoId_anoLectivoId: { alumnoId: d.alumnoId, anoLectivoId: anoLectivoDestinoId } },
+        update: { seccionId: seccionDestino.id },
+        create: {
+          alumnoId: d.alumnoId, anoLectivoId: anoLectivoDestinoId,
+          seccionId: seccionDestino.id, monto: 0,
+          fechaVencimiento: new Date(new Date().getFullYear() + 1, 2, 31),
+        },
+      });
+      repetidores++;
+    }
   }
+
+  return NextResponse.json({ promovidos, repetidores, egresados });
 }

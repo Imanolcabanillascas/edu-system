@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { calcularPromedioAlumno } from "@/lib/promedios";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 
-// Genera el PDF en memoria con pdf-lib (sin Chromium) — solo corre al solicitarse,
-// reutilizando el mismo cálculo ponderado por materia que el reporte en pantalla.
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session || (session.user as any).rol !== "ADMIN") {
@@ -16,85 +14,88 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const seccionId = searchParams.get("seccionId");
   const alumnoId = searchParams.get("alumnoId");
-  if (!seccionId && !alumnoId) return NextResponse.json({ error: "Indica seccionId o alumnoId" }, { status: 400 });
 
-  const alumnos = await prisma.alumno.findMany({
-    where: alumnoId ? { id: alumnoId } : { seccionId },
+  if (!seccionId && !alumnoId) {
+    return NextResponse.json({ error: "Indica seccionId o alumnoId" }, { status: 400 });
+  }
+
+  // Obtiene alumnos via matrículas
+  const matriculas = await prisma.matricula.findMany({
+    where: alumnoId ? { alumnoId } : { seccionId: seccionId! },
     select: {
-      id: true, dni: true, usuario: { select: { nombre: true } },
       seccion: { select: { nombre: true, grado: { select: { nombre: true } } } },
+      alumno: { select: { id: true, dni: true, usuario: { select: { nombre: true } } } },
     },
-    orderBy: { usuario: { nombre: "asc" } },
   });
 
-  const datos = await Promise.all(
-    alumnos.map(async (a) => ({ alumno: a, ...(await calcularPromedioAlumno(a.id)) }))
+  const alumnos = matriculas.map((m) => m.alumno);
+  const seccionInfo = matriculas[0]?.seccion;
+
+  const resultados = await Promise.all(
+    alumnos.map(async (alumno) => {
+      const { promedioAnual, materias } = await calcularPromedioAlumno(alumno.id);
+      return { alumno, promedioAnual, materias };
+    })
   );
 
-  const pdfDoc = await PDFDocument.create();
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const margin = 50;
-  const pageWidth = 595.28;
-  const pageHeight = 841.89;
-  let page = pdfDoc.addPage([pageWidth, pageHeight]);
-  let y = pageHeight - margin;
+  // Genera PDF
+  const pdf = await PDFDocument.create();
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const regular = await pdf.embedFont(StandardFonts.Helvetica);
+  const MARGEN = 50;
+  const ANCHO = 595;
+  const ALTO = 842;
+  const COLOR_PRIMARIO = rgb(0.4, 0.32, 0.88);
+  const COLOR_TEXTO = rgb(0.11, 0.11, 0.16);
+  const COLOR_MUTED = rgb(0.42, 0.41, 0.52);
+  const COLOR_BORDE = rgb(0.88, 0.89, 0.93);
 
-  const colorAccent = rgb(0.486, 0.416, 0.961);
-  const colorMuted = rgb(0.478, 0.459, 0.6);
-  const colorText = rgb(0.1, 0.1, 0.12);
-  const colorGreen = rgb(0.337, 0.776, 0.588);
-  const colorRed = rgb(0.878, 0.361, 0.361);
+  const page = pdf.addPage([ANCHO, ALTO]);
+  let y = ALTO - 60;
 
-  const drawText = (text: string, x: number, size: number, bold = false, color = colorText) => {
-    page.drawText(text, { x, y, size, font: bold ? fontBold : font, color });
-  };
-  const newPageIfNeeded = (needed: number) => {
-    if (y - needed < margin) { page = pdfDoc.addPage([pageWidth, pageHeight]); y = pageHeight - margin; }
-  };
+  // Header
+  page.drawRectangle({ x: 0, y: ALTO - 70, width: ANCHO, height: 70, color: COLOR_PRIMARIO });
+  page.drawText("EduAdmin — Reporte de Notas", { x: MARGEN, y: ALTO - 28, size: 13, font: bold, color: rgb(1, 1, 1) });
+  page.drawText(`Emitido: ${new Date().toLocaleDateString("es-PE")}`, { x: MARGEN, y: ALTO - 48, size: 9, font: regular, color: rgb(0.9, 0.9, 1) });
 
-  const titulo = alumnoId ? "Reporte de notas — Alumno" : "Reporte de notas — Aula";
-  drawText(`EduAdmin — ${titulo}`, margin, 18, true, colorAccent);
-  y -= 26;
+  y = ALTO - 90;
+  const titulo = seccionInfo
+    ? `${seccionInfo.grado.nombre} "${seccionInfo.nombre}"`
+    : alumnos[0]?.usuario.nombre ?? "Reporte de Notas";
+  page.drawText(titulo, { x: MARGEN, y, size: 16, font: bold, color: COLOR_TEXTO });
+  y -= 20;
+  page.drawLine({ start: { x: MARGEN, y }, end: { x: ANCHO - MARGEN, y }, thickness: 0.5, color: COLOR_BORDE });
+  y -= 14;
 
-  if (seccionId && alumnos[0]?.seccion) {
-    const s = alumnos[0].seccion;
-    drawText(`Sección: ${s.grado.nombre} "${s.nombre}"`, margin, 11, false, colorMuted);
-    y -= 16;
-  }
-  y -= 10;
-  page.drawLine({ start: { x: margin, y }, end: { x: pageWidth - margin, y }, thickness: 1, color: colorMuted });
-  y -= 24;
-
-  for (const { alumno: a, promedioAnual, materias, criterio } of datos) {
-    newPageIfNeeded(60);
-    const aprobado = promedioAnual !== null ? promedioAnual >= criterio.notaAprobatoria : null;
-
-    drawText(`${a.usuario.nombre}  —  DNI: ${a.dni}`, margin, 12, true, colorAccent);
-    if (promedioAnual !== null) {
-      drawText(`Promedio: ${promedioAnual.toFixed(2)} ${aprobado ? "(Aprobado)" : "(No aprobado)"}`, pageWidth - margin - 190, 12, true, aprobado ? colorGreen : colorRed);
+  for (const { alumno, promedioAnual, materias } of resultados) {
+    if (y < 120) {
+      const newPage = pdf.addPage([ANCHO, ALTO]);
+      y = ALTO - 60;
     }
-    y -= 16;
 
-    const materiasConNota = materias.filter((m) => m.notaFinal !== null);
-    if (materiasConNota.length === 0) {
-      drawText("Sin calificaciones registradas.", margin + 10, 9.5, false, colorMuted);
-      y -= 16;
-    } else {
-      for (const m of materiasConNota) {
-        newPageIfNeeded(14);
-        drawText(`•  ${m.materia} — Nota final: ${m.notaFinal} (Tareas: ${m.promedioTareas ?? "—"} · Exámenes: ${m.promedioExamenes ?? "—"})`, margin + 10, 9.5, false, colorText);
-        y -= 13;
-      }
+    page.drawText(alumno.usuario.nombre, { x: MARGEN, y, size: 11, font: bold, color: COLOR_TEXTO });
+    page.drawText(`DNI: ${alumno.dni}`, { x: MARGEN + 200, y, size: 9, font: regular, color: COLOR_MUTED });
+    if (promedioAnual != null) {
+      page.drawText(`Promedio: ${promedioAnual.toFixed(2)}`, { x: MARGEN + 350, y, size: 9, font: bold, color: promedioAnual >= 10.5 ? rgb(0.16, 0.65, 0.38) : rgb(0.87, 0.27, 0.27) });
     }
     y -= 14;
+
+    for (const m of materias) {
+      if (y < 60) break;
+      page.drawText(`• ${m.materia}`, { x: MARGEN + 10, y, size: 8, font: regular, color: COLOR_TEXTO });
+      page.drawText(m.notaFinal != null ? m.notaFinal.toFixed(2) : "—", { x: MARGEN + 250, y, size: 8, font: bold, color: COLOR_MUTED });
+      y -= 12;
+    }
+    y -= 8;
+    page.drawLine({ start: { x: MARGEN, y }, end: { x: ANCHO - MARGEN, y }, thickness: 0.3, color: COLOR_BORDE });
+    y -= 10;
   }
 
-  const fechaGeneracion = new Date().toLocaleString("es-PE", { timeZone: "America/Lima" });
-  page.drawText(`Generado el ${fechaGeneracion} (hora de Perú)`, { x: margin, y: margin / 2, size: 8, font, color: colorMuted });
-
-  const pdfBytes = await pdfDoc.save();
-  return new NextResponse(pdfBytes, {
-    headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="reporte_notas.pdf"` },
+  const bytes = await pdf.save();
+  return new NextResponse(bytes, {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="notas-${Date.now()}.pdf"`,
+    },
   });
 }

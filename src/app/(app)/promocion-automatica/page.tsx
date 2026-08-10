@@ -1,192 +1,149 @@
 "use client";
 import { useEffect, useState } from "react";
-import { initials, avatarColor, NIVEL_LABEL } from "@/lib/utils";
-import { IconArrowRight, IconLoader, IconCheck, IconAlert, IconX } from "@/components/icons";
-
-type Accion = "PROMOVER" | "EGRESAR" | "REPETIR";
+import { NIVEL_LABEL } from "@/lib/utils";
+import { IconLoader, IconCheck, IconAlert, IconArrowRight, IconStudent } from "@/components/icons";
 
 export default function PromocionAutomaticaPage() {
+  const [vistaPrevia, setVistaPrevia] = useState<any[]>([]);
+  const [anoActivo, setAnoActivo] = useState<any>(null);
   const [anos, setAnos] = useState<any[]>([]);
-  const [anoOrigenId, setAnoOrigenId] = useState("");
-  const [anoDestinoId, setAnoDestinoId] = useState("");
-
-  const [vistaPrevia, setVistaPrevia] = useState<any[] | null>(null);
-  const [decisiones, setDecisiones] = useState<Record<string, Accion>>({});
-  const [cargando, setCargando] = useState(false);
+  const [anoDestino, setAnoDestino] = useState("");
+  const [decisiones, setDecisiones] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
   const [aplicando, setAplicando] = useState(false);
-  const [resultado, setResultado] = useState<any | null>(null);
+  const [resultado, setResultado] = useState<any>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch("/api/anos-lectivos").then((r) => r.json()).then((data) => {
-      setAnos(data);
-      const activo = data.find((a: any) => a.activo);
-      setAnoOrigenId(activo?.id ?? data[0]?.id ?? "");
+    Promise.all([
+      fetch("/api/promocion-automatica").then((r) => r.json()),
+      fetch("/api/anos-lectivos").then((r) => r.json()),
+    ]).then(([data, anosData]) => {
+      setVistaPrevia(data.vistaPrevia ?? []);
+      setAnoActivo(data.anoActivo);
+      setAnos(anosData);
+      // Pre-seleccionar decisiones por defecto
+      const dec: Record<string, string> = {};
+      for (const sec of data.vistaPrevia ?? []) {
+        for (const a of sec.matriculas) {
+          dec[a.id] = sec.esUltimoGrado ? "EGRESAR" : (a.aprueba ? "PROMOVER" : "REPETIR");
+        }
+      }
+      setDecisiones(dec);
+      setLoading(false);
     });
   }, []);
 
-  const cargarVistaPrevia = async () => {
-    if (!anoOrigenId) return;
-    setCargando(true); setError(""); setResultado(null);
-    const res = await fetch(`/api/promocion-automatica?anoLectivoOrigenId=${anoOrigenId}`);
-    const data = await res.json();
-    setCargando(false);
-    if (!res.ok) { setError(data.error); return; }
-
-    setVistaPrevia(data);
-    // Decisión inicial automática: aprueba → promover (o egresar si es el último grado); no aprueba → repetir
-    const iniciales: Record<string, Accion> = {};
-    for (const seccion of data) {
-      for (const a of seccion.alumnos) {
-        iniciales[a.id] = a.aprueba ? (seccion.esUltimoGrado ? "EGRESAR" : "PROMOVER") : "REPETIR";
-      }
-    }
-    setDecisiones(iniciales);
-  };
-
-  const cambiarDecision = (alumnoId: string, accion: Accion) => {
-    setDecisiones((prev) => ({ ...prev, [alumnoId]: accion }));
-  };
+  const totalAlumnos = vistaPrevia.reduce((s, sec) => s + sec.matriculas.length, 0);
 
   const aplicar = async () => {
-    if (!vistaPrevia || !anoDestinoId) { setError("Selecciona el año lectivo de destino"); return; }
-    if (anoDestinoId === anoOrigenId) { setError("El año de destino debe ser distinto al de origen"); return; }
+    if (!anoDestino) { setError("Selecciona el año lectivo de destino"); return; }
+    if (!confirm(`¿Confirmas la promoción de ${totalAlumnos} alumno(s)?`)) return;
+    setAplicando(true); setError("");
 
-    const listaDecisiones = vistaPrevia.flatMap((seccion) =>
-      seccion.alumnos.map((a: any) => ({ alumnoId: a.id, seccionOrigenId: seccion.seccionId, accion: decisiones[a.id] }))
+    const decisionesArray = vistaPrevia.flatMap((sec) =>
+      sec.matriculas.map((a: any) => ({
+        alumnoId: a.id,
+        seccionOrigenId: sec.seccionId,
+        accion: decisiones[a.id] ?? "REPETIR",
+      }))
     );
 
-    if (!confirm(`¿Aplicar la promoción a ${listaDecisiones.filter((d) => d.accion !== "REPETIR").length} alumno(s)? Esta acción modifica sus secciones/estado.`)) return;
-
-    setAplicando(true); setError("");
     const res = await fetch("/api/promocion-automatica", {
       method: "POST",
-      body: JSON.stringify({ anoLectivoDestinoId: anoDestinoId, decisiones: listaDecisiones }),
+      body: JSON.stringify({ decisiones: decisionesArray, anoLectivoDestinoId: anoDestino }),
     });
     const data = await res.json();
     setAplicando(false);
     if (!res.ok) { setError(data.error); return; }
     setResultado(data);
-    setVistaPrevia(null);
   };
 
-  const totalAlumnos = vistaPrevia?.reduce((s, sec) => s + sec.alumnos.length, 0) ?? 0;
-  const totalPromover = vistaPrevia ? Object.values(decisiones).filter((d) => d === "PROMOVER").length : 0;
-  const totalEgresar = vistaPrevia ? Object.values(decisiones).filter((d) => d === "EGRESAR").length : 0;
-  const totalRepiten = vistaPrevia ? Object.values(decisiones).filter((d) => d === "REPETIR").length : 0;
+  if (loading) return <div className="empty"><IconLoader size={24} /></div>;
 
   return (
     <div>
       <div className="page-header">
-        <h1><IconArrowRight size={24} /> Promoción automática de fin de año</h1>
-        <p>Calcula quién aprueba según su promedio y revisa antes de aplicar los cambios masivos</p>
+        <h1>Promoción de fin de año</h1>
+        <p>Mueve automáticamente a los alumnos al siguiente grado según sus promedios</p>
       </div>
 
-      <div className="form-row" style={{ maxWidth: 600, marginBottom: 4 }}>
-        <div className="form-group"><label>Año lectivo de origen (el que termina)</label>
-          <select value={anoOrigenId} onChange={(e) => { setAnoOrigenId(e.target.value); setVistaPrevia(null); }}>
-            {anos.map((a: any) => <option key={a.id} value={a.id}>{a.anio}{a.activo ? " (activo)" : ""}</option>)}
-          </select></div>
-        <div className="form-group"><label>Año lectivo de destino (al que pasan)</label>
-          <select value={anoDestinoId} onChange={(e) => setAnoDestinoId(e.target.value)}>
-            <option value="">Seleccionar…</option>
-            {anos.map((a: any) => <option key={a.id} value={a.id}>{a.anio}</option>)}
-          </select></div>
-      </div>
-
-      <div className="toolbar">
-        <div style={{ flex: 1 }} />
-        <button className="btn btn-ghost" onClick={cargarVistaPrevia} disabled={cargando || !anoOrigenId}>
-          {cargando ? "Calculando…" : "Calcular vista previa"}
-        </button>
-      </div>
-
-      {error && <div className="alert-error">{error}</div>}
-
-      {resultado && (
-        <div className="alert-banner" style={{ cursor: "default", background: "var(--green)15", borderColor: "var(--green)40", color: "var(--green)" }}>
-          <IconCheck size={16} />
-          Listo: {resultado.promovidos} promovido(s), {resultado.egresados} egresado(s), {resultado.repiten} repiten de año.
+      {resultado ? (
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 32, textAlign: "center" }}>
+          <IconCheck size={48} style={{ color: "var(--green)", marginBottom: 16 }} />
+          <h2 style={{ marginBottom: 16 }}>Promoción aplicada</h2>
+          <div style={{ display: "flex", justifyContent: "center", gap: 24, flexWrap: "wrap" }}>
+            <div><div style={{ fontSize: "2rem", fontWeight: 700, color: "var(--green)" }}>{resultado.promovidos}</div><div className="muted-label">Promovidos</div></div>
+            <div><div style={{ fontSize: "2rem", fontWeight: 700, color: "var(--accent)" }}>{resultado.repetidores}</div><div className="muted-label">Repiten</div></div>
+            <div><div style={{ fontSize: "2rem", fontWeight: 700, color: "var(--accent2)" }}>{resultado.egresados}</div><div className="muted-label">Egresados</div></div>
+          </div>
         </div>
-      )}
-
-      {cargando && <div className="empty"><IconLoader size={24} /></div>}
-
-      {vistaPrevia && !cargando && (
+      ) : (
         <>
-          {totalAlumnos === 0 ? (
-            <div className="empty"><IconAlert size={28} style={{ color: "var(--muted)" }} /><p>No hay alumnos activos en secciones de este año</p></div>
-          ) : (
-            <>
-              <div className="stats" style={{ marginTop: 20 }}>
-                <div className="stat-card">
-                  <div className="stat-icon" style={{ background: "var(--green)1f", color: "var(--green)" }}><IconCheck size={20} /></div>
-                  <div><div className="stat-value">{totalPromover}</div><div className="stat-label">Pasan de grado</div></div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-icon" style={{ background: "var(--accent2)1f", color: "var(--accent2)" }}><IconArrowRight size={20} /></div>
-                  <div><div className="stat-value">{totalEgresar}</div><div className="stat-label">Egresan</div></div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-icon" style={{ background: "var(--danger)1f", color: "var(--danger)" }}><IconX size={20} /></div>
-                  <div><div className="stat-value">{totalRepiten}</div><div className="stat-label">Repiten</div></div>
-                </div>
-              </div>
+          {error && <div className="alert-error">{error}</div>}
 
-              {vistaPrevia.map((seccion) => (
-                <div key={seccion.seccionId} style={{ marginBottom: 28 }}>
-                  <h3 className="section-title">
-                    {seccion.grado.nombre} "{seccion.seccionNombre}" — {NIVEL_LABEL[seccion.grado.nivel.tipo]}
-                    {seccion.esUltimoGrado && <span className="badge" style={{ background: "var(--accent2)22", color: "var(--accent2)", marginLeft: 10 }}>Último grado — egresan</span>}
-                    {!seccion.esUltimoGrado && !seccion.grado.gradoSiguiente && (
-                      <span className="badge" style={{ background: "var(--danger)22", color: "var(--danger)", marginLeft: 10 }}>Sin grado siguiente configurado</span>
-                    )}
-                  </h3>
-                  <div className="table-wrap">
-                    <table>
-                      <thead><tr><th>Alumno</th><th>DNI</th><th>Promedio</th><th>Decisión</th></tr></thead>
-                      <tbody>
-                        {seccion.alumnos.map((a: any) => (
-                          <tr key={a.id}>
-                            <td style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              <div className="avatar" style={{ background: avatarColor(a.nombre) + "33", color: avatarColor(a.nombre) }}>{initials(a.nombre)}</div>
-                              {a.nombre}
-                            </td>
-                            <td style={{ color: "var(--muted)", fontFamily: "monospace" }}>{a.dni}</td>
-                            <td>
-                              {a.promedio !== null ? (
-                                <span className="badge" style={{ background: a.aprueba ? "var(--green)22" : "var(--danger)22", color: a.aprueba ? "var(--green)" : "var(--danger)" }}>
-                                  {a.promedio.toFixed(2)}
-                                </span>
-                              ) : <span style={{ color: "var(--muted)" }}>Sin notas</span>}
-                            </td>
-                            <td>
-                              <select
-                                value={decisiones[a.id] ?? "REPETIR"}
-                                onChange={(e) => cambiarDecision(a.id, e.target.value as Accion)}
-                                style={{ width: "auto", padding: "5px 10px", fontSize: ".8rem" }}
-                              >
-                                {!seccion.esUltimoGrado && <option value="PROMOVER">Promover</option>}
-                                {seccion.esUltimoGrado && <option value="EGRESAR">Egresar</option>}
-                                <option value="REPETIR">Repite de año</option>
-                              </select>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ))}
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 20, marginBottom: 24, display: "flex", gap: 16, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <div className="form-group" style={{ marginBottom: 0, minWidth: 240 }}>
+              <label>Año lectivo de destino</label>
+              <select value={anoDestino} onChange={(e) => setAnoDestino(e.target.value)}>
+                <option value="">Seleccionar…</option>
+                {anos.filter((a: any) => a.id !== anoActivo?.id).map((a: any) => (
+                  <option key={a.id} value={a.id}>{a.anio}{a.activo ? " (activo)" : ""}</option>
+                ))}
+              </select>
+            </div>
+            <div className="muted-label" style={{ marginBottom: 8 }}>{totalAlumnos} alumno(s) a procesar</div>
+            <button className="btn btn-primary" onClick={aplicar} disabled={aplicando || !anoDestino}>
+              {aplicando ? "Aplicando…" : "Aplicar promoción"}
+            </button>
+          </div>
 
-              <div className="toolbar">
-                <div style={{ flex: 1 }} />
-                <button className="btn btn-primary" onClick={aplicar} disabled={aplicando || !anoDestinoId}>
-                  {aplicando ? "Aplicando…" : "Confirmar y aplicar promoción"}
-                </button>
-              </div>
-            </>
+          {vistaPrevia.length === 0 && (
+            <div className="empty"><IconStudent size={32} style={{ color: "var(--muted)" }} /><p>No hay alumnos matriculados en el año activo</p></div>
           )}
+
+          {vistaPrevia.map((seccion) => (
+            <div key={seccion.seccionId} style={{ marginBottom: 28 }}>
+              <h3 className="section-title">
+                {seccion.grado.nombre} &ldquo;{seccion.seccionNombre}&rdquo; — {NIVEL_LABEL[seccion.grado.nivel.tipo]}
+                {seccion.esUltimoGrado && <span className="badge" style={{ background: "var(--accent2)22", color: "var(--accent2)", marginLeft: 10 }}>Último grado — egresan</span>}
+                {!seccion.esUltimoGrado && !seccion.grado.gradoSiguiente && (
+                  <span className="badge" style={{ background: "var(--danger)22", color: "var(--danger)", marginLeft: 10 }}>Sin grado siguiente configurado</span>
+                )}
+              </h3>
+
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Alumno</th><th>Promedio</th><th>Decisión</th></tr></thead>
+                  <tbody>
+                    {seccion.matriculas.map((a: any) => (
+                      <tr key={a.id}>
+                        <td style={{ fontWeight: 500 }}>{a.nombre}</td>
+                        <td>
+                          {a.promedioAnual != null ? (
+                            <span style={{ fontWeight: 600, color: a.aprueba ? "var(--green)" : "var(--danger)" }}>
+                              {a.promedioAnual.toFixed(2)}
+                            </span>
+                          ) : <span style={{ color: "var(--muted)" }}>Sin notas</span>}
+                        </td>
+                        <td>
+                          <select
+                            value={decisiones[a.id] ?? "REPETIR"}
+                            onChange={(e) => setDecisiones({ ...decisiones, [a.id]: e.target.value })}
+                            style={{ fontSize: ".82rem", padding: "4px 8px", borderRadius: 6, border: "1.5px solid var(--border)", background: "var(--surface2)" }}
+                          >
+                            {!seccion.esUltimoGrado && <option value="PROMOVER">Promover al siguiente grado</option>}
+                            <option value="REPETIR">Repetir el mismo grado</option>
+                            <option value="EGRESAR">Egresar</option>
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
         </>
       )}
     </div>
