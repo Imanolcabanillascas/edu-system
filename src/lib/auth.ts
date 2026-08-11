@@ -3,9 +3,13 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
+const SECRET = "16adf0b66ae983fa4d1a94fc9366d2f7eee0b055db3e632f6f6aaefc31c5ac84";
+process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || SECRET;
+
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   pages: { signIn: "/sign-in" },
+  secret: SECRET,
   providers: [
     CredentialsProvider({
       name: "Credenciales",
@@ -44,5 +48,4 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
   },
-  secret: process.env.NEXTAUTH_SECRET ?? "16adf0b66ae983fa4d1a94fc9366d2f7eee0b055db3e632f6f6aaefc31c5ac84",
 };
