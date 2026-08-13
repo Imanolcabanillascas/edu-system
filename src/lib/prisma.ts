@@ -3,8 +3,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 const DATABASE_URL =
   process.env.DATABASE_URL ??
-  "postgresql://neondb_owner:npg_hSxo95TiIgAK@ep-muddy-pine-atppmwxm-pooler.c-9.us-east-1.aws.neon.tech/neondb?sslmode=require";
-
+  "postgresql://neondb_owner:npg_hSxo95TiIgAK@ep-muddy-pine-atppmwxm-pooler.c-9.us-east-1.aws.neon.tech/neondb?sslmode=verify-full";
 declare global {
   var prisma: PrismaClient | undefined;
 }
