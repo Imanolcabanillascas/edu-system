@@ -8,9 +8,15 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   const nombre = (session?.user as any)?.name ?? session?.user?.name ?? "Usuario";
 
   return (
-    <div className="app-shell">
+    <div style={{ display: "flex", minHeight: "100vh" }}>
       <Sidebar rol={rol} nombre={nombre} />
-      <main className="main-content">
+      <main style={{
+        flex: 1,
+        marginLeft: "var(--sidebar-w)",
+        padding: "32px 36px",
+        minWidth: 0,
+        overflowX: "hidden",
+      }} className="main-content">
         {children}
       </main>
     </div>
