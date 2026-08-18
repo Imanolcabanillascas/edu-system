@@ -25,7 +25,7 @@ export default function PromocionAutomaticaPage() {
       // Pre-seleccionar decisiones por defecto
       const dec: Record<string, string> = {};
       for (const sec of data.vistaPrevia ?? []) {
-        for (const a of sec.matriculas) {
+        for (const a of (sec.matriculas ?? sec.alumnos ?? [])) {
           dec[a.id] = sec.esUltimoGrado ? "EGRESAR" : (a.aprueba ? "PROMOVER" : "REPETIR");
         }
       }
@@ -34,7 +34,7 @@ export default function PromocionAutomaticaPage() {
     });
   }, []);
 
-  const totalAlumnos = vistaPrevia.reduce((s, sec) => s + sec.matriculas.length, 0);
+  const totalAlumnos = vistaPrevia.reduce((s, sec) => s + (sec.matriculas ?? sec.alumnos ?? []).length, 0);
 
   const aplicar = async () => {
     if (!anoDestino) { setError("Selecciona el año lectivo de destino"); return; }
@@ -42,7 +42,7 @@ export default function PromocionAutomaticaPage() {
     setAplicando(true); setError("");
 
     const decisionesArray = vistaPrevia.flatMap((sec) =>
-      sec.matriculas.map((a: any) => ({
+      (sec.matriculas ?? sec.alumnos ?? []).map((a: any) => ({
         alumnoId: a.id,
         seccionOrigenId: sec.seccionId,
         accion: decisiones[a.id] ?? "REPETIR",
@@ -116,7 +116,7 @@ export default function PromocionAutomaticaPage() {
                 <table>
                   <thead><tr><th>Alumno</th><th>Promedio</th><th>Decisión</th></tr></thead>
                   <tbody>
-                    {seccion.matriculas.map((a: any) => (
+                    {(seccion.matriculas ?? seccion.alumnos ?? []).map((a: any) => (
                       <tr key={a.id}>
                         <td style={{ fontWeight: 500 }}>{a.nombre}</td>
                         <td>
