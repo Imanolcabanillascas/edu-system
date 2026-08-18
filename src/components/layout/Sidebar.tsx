@@ -52,23 +52,17 @@ export default function Sidebar({ rol, nombre }: SidebarProps) {
   const rolColor = { ADMIN: "var(--accent)", PROFESOR: "var(--accent2)", ALUMNO: "var(--accent3)" }[rol];
   const inicial = nombre?.charAt(0)?.toUpperCase() ?? "U";
 
-  // Cierra el sidebar al cambiar de ruta en móvil
   useEffect(() => { setOpen(false); }, [pathname]);
-
-  // Bloquea scroll del body cuando sidebar está abierto en móvil
   useEffect(() => {
-    if (open) document.body.style.overflow = "hidden";
-    else document.body.style.overflow = "";
+    document.body.style.overflow = open ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [open]);
 
-  const sidebarContent = (
-    <aside style={{
+  const SidebarInner = () => (
+    <div style={{
       width: "var(--sidebar-w)", height: "100%", display: "flex", flexDirection: "column",
-      background: "var(--surface)", borderRight: "1px solid var(--border)",
-      overflowY: "auto", overflowX: "hidden",
+      background: "var(--surface)", borderRight: "1px solid var(--border)", overflowY: "auto",
     }}>
-      {/* Logo */}
       <div style={{ padding: "20px 20px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border)" }}>
         <Link href="/dashboard" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 32, height: 32, borderRadius: 8, background: "var(--accent2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -76,14 +70,11 @@ export default function Sidebar({ rol, nombre }: SidebarProps) {
           </div>
           <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: "1.1rem", color: "var(--text)", fontWeight: 700 }}>EduAdmin</span>
         </Link>
-        {/* Botón cerrar en móvil */}
-        <button onClick={() => setOpen(false)} className="sidebar-close-btn"
-          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", display: "none", padding: 4 }}>
+        <button onClick={() => setOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "none" }} className="btn-close-sidebar">
           <IconX size={20} />
         </button>
       </div>
 
-      {/* Nav */}
       <nav style={{ flex: 1, padding: "12px 10px", display: "flex", flexDirection: "column", gap: 2 }}>
         {items.map(({ href, icon: Icon, label }) => {
           const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
@@ -95,12 +86,9 @@ export default function Sidebar({ rol, nombre }: SidebarProps) {
                 background: active ? "var(--accent2)18" : "transparent",
                 color: active ? "var(--accent2)" : "var(--muted)",
                 fontWeight: active ? 600 : 400, fontSize: ".875rem",
-              }}
-                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = "var(--surface2)"; }}
-                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-              >
+              }}>
                 <Icon size={18} style={{ flexShrink: 0 }} />
-                <span className="nav-label">{label}</span>
+                <span>{label}</span>
                 {active && <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--accent2)", marginLeft: "auto", flexShrink: 0 }} />}
               </div>
             </Link>
@@ -108,13 +96,12 @@ export default function Sidebar({ rol, nombre }: SidebarProps) {
         })}
       </nav>
 
-      {/* Usuario */}
       <div style={{ padding: "12px 10px", borderTop: "1px solid var(--border)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 10, background: "var(--surface2)", marginBottom: 8 }}>
           <div style={{ width: 32, height: 32, borderRadius: "50%", background: rolColor + "33", color: rolColor, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: ".85rem", flexShrink: 0 }}>
             {inicial}
           </div>
-          <div style={{ overflow: "hidden", flex: 1 }} className="user-info">
+          <div style={{ overflow: "hidden", flex: 1 }}>
             <div style={{ fontWeight: 600, fontSize: ".82rem", color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nombre}</div>
             <div style={{ fontSize: ".72rem", color: rolColor, fontWeight: 500 }}>{rolLabel}</div>
           </div>
@@ -122,26 +109,24 @@ export default function Sidebar({ rol, nombre }: SidebarProps) {
         <button onClick={() => signOut({ callbackUrl: "/sign-in" })} style={{
           width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 12px",
           borderRadius: 10, border: "none", background: "transparent", cursor: "pointer",
-          color: "var(--muted)", fontSize: ".875rem", transition: "all .15s",
-        }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--danger)12"; (e.currentTarget as HTMLElement).style.color = "var(--danger)"; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; (e.currentTarget as HTMLElement).style.color = "var(--muted)"; }}
-        >
+          color: "var(--muted)", fontSize: ".875rem",
+        }}>
           <IconLogout size={16} />
-          <span className="nav-label">Cerrar sesión</span>
+          <span>Cerrar sesión</span>
         </button>
       </div>
-    </aside>
+    </div>
   );
 
   return (
     <>
       {/* Topbar móvil */}
-      <div className="mobile-topbar" style={{
-        position: "fixed", top: 0, left: 0, right: 0, height: 56, zIndex: 100,
+      <div style={{
+        position: "fixed", top: 0, left: 0, right: 0, height: 56, zIndex: 400,
         background: "var(--surface)", borderBottom: "1px solid var(--border)",
-        display: "none", alignItems: "center", padding: "0 16px", gap: 12,
-      }}>
+        alignItems: "center", padding: "0 16px", gap: 12,
+        display: "none",
+      }} className="mobile-topbar">
         <button onClick={() => setOpen(true)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text)", padding: 4, display: "flex" }}>
           <IconMenu size={22} />
         </button>
@@ -156,25 +141,21 @@ export default function Sidebar({ rol, nombre }: SidebarProps) {
         </div>
       </div>
 
-      {/* Backdrop móvil */}
-      {open && (
-        <div onClick={() => setOpen(false)} style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 150,
-        }} />
-      )}
+      {/* Backdrop */}
+      {open && <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 450 }} />}
 
       {/* Sidebar desktop */}
       <div className="sidebar-desktop" style={{ position: "fixed", top: 0, left: 0, height: "100vh", zIndex: 200 }}>
-        {sidebarContent}
+        <SidebarInner />
       </div>
 
-      {/* Sidebar móvil (drawer) */}
-      <div style={{
-        position: "fixed", top: 0, left: 0, height: "100vh", zIndex: 200,
+      {/* Sidebar móvil drawer */}
+      <div className="sidebar-mobile" style={{
+        position: "fixed", top: 0, left: 0, height: "100vh", zIndex: 500,
         transform: open ? "translateX(0)" : "translateX(-100%)",
         transition: "transform .25s ease",
-      }} className="sidebar-mobile">
-        {sidebarContent}
+      }}>
+        <SidebarInner />
       </div>
     </>
   );
