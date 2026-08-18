@@ -1,0 +1,6 @@
+{
+    "env": {
+      "DATABASE_URL": "postgresql://neondb_owner:npg_hSxo95TiIgAK@ep-muddy-pine-atppmwxm-pooler.c-9.us-east-1.aws.neon.tech/neondb?sslmode=verify-full",
+      "NEXTAUTH_SECRET": "16adf0b66ae983fa4d1a94fc9366d2f7eee0b055db3e632f6f6aaefc31c5ac84"
+    }
+  }
