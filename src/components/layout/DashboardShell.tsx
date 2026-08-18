@@ -1,12 +1,12 @@
+"use client";
+import { useSession } from "next-auth/react";
 import Sidebar from "./Sidebar";
 
-interface DashboardShellProps {
-  children: React.ReactNode;
-  rol: "ADMIN" | "PROFESOR" | "ALUMNO";
-  nombre: string;
-}
+export default function DashboardShell({ children }: { children: React.ReactNode }) {
+  const { data: session } = useSession();
+  const rol = (session?.user as any)?.rol ?? "ALUMNO";
+  const nombre = (session?.user as any)?.name ?? session?.user?.name ?? "Usuario";
 
-export default function DashboardShell({ children, rol, nombre }: DashboardShellProps) {
   return (
     <div className="app-shell">
       <Sidebar rol={rol} nombre={nombre} />
