@@ -20,17 +20,19 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
       
+        console.log("Intentando login:", credentials.email);
+        console.log("DATABASE_URL existe:", !!process.env.DATABASE_URL);
       
         const usuario = await prisma.usuario.findUnique({
           where: { email: credentials.email.toLowerCase().trim() },
         });
         
-       
+        console.log("Usuario encontrado:", !!usuario);
         
         if (!usuario || usuario.password === "PENDIENTE") return null;
       
         const valido = await bcrypt.compare(credentials.password, usuario.password);
-       
+        console.log("Password valido:", valido);
         
         if (!valido) return null;
       
